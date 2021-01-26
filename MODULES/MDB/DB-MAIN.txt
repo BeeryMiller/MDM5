@@ -1,0 +1,149 @@
+************************************************
+*  Startup  Backup/Restore/Catalog Operation   *
+************************************************
+*
+SLOAD
+SFIRST
+START  LWPI MAINWS
+PATMDM
+* RELOAD PATH FOR MDM WILL OVERLAY THE NEXT 40 BYTES
+* FIRST put the active drive list in accending order if its not
+DSRT   LI   R0,FDRS      LOCATion of list
+       CLR  R4           SWAP flag
+       LI   R3,8         8 TO do
+DSRT1  MOVB *R0+,R1      GET A drive
+       JEQ  DSRT2        NO MOre
+       MOVB *R0,R2       GET Next
+       JEQ  DSRT2        NO MOre
+       DEC  R3
+       JEQ  DSRT2
+       SRL  R1,8
+       SRL  R2,8
+       C    R1,R2        IS 1 < 2
+       JL   DSRT1        YES
+       SETO R4           SET Out of order flag
+       DEC  R0           BACKUP 1
+       SLA  R1,8
+       SLA  R2,8
+       MOVB R2,*R0+      PUT 2 in 1
+       MOVB R1,*R0       PUT 1 into 2
+       CI   R0,FDRS+3    AT ENd of list
+       JNE  DSRT1        NO
+DSRT2  MOV  R4,R4        ANY Swaps done
+       JNE  DSRT         YES Start over
+* NEXT get the printer name and reload path
+       LI   R0,PONTRS
+       MOV  *R0+,R1      GET Printer info
+       MOV  *R0,R3       GET Reload info
+       LI   R0,PTYPE     MOVE ptype info
+       MOVB *R1+,R2      GET # to move
+       MOVB R2,*R0+      1ST Save length
+       SRL  R2,8
+       MOV  R2,R2
+       JEQ  PMOVDN       YES
+PMOV   MOVB *R1+,*R0+
+       DEC  R2
+       JNE  PMOV
+PMOVDN LI   R0,PATMDM    GET Path for reload
+       MOVB *R3+,R2      GET # to move
+       MOVB R2,*R0+      1ST Save length
+       SRL  R2,8
+       MOV  R2,R2        LENGTH ZERO
+       JEQ  DSRT         YES
+RMOV   MOVB *R3+,*R0+    NOW Save path
+       DEC  R2
+       JNE  RMOV
+*
+       LI   R1,'  '
+       LI   R0,MCL*6     SKIP BACKUP NAME LINE
+       LI   R2,MCL*13
+START2 BLWP @VSBW
+       INC  R0
+       DEC  R2
+       JNE  START2
+       BL   @DUPMEM      INIT HIGH MEMORY
+       DATA >FFD0-WS1,>0000,WS1
+       LI   R0,LSTST     Filename list loc.
+       MOV  R0,@NXTOUT   Save it
+       MOV  R0,@NXTDSP   Loc. of next filename to be saved
+       LI   R0,MEMADD    CPU start of memory save
+       MOV  R0,@MPOINT
+       LI   R1,FCBP      Init point to WDS files list
+       MOV  R1,@FCBLST   Save it
+       MOVB @WDS,R1
+       MOVB R1,R2
+VBLOC  AI   R2,>8000     MAKE ALL WDS ACCESS VIA CPU
+VARBIT EQU  VBLOC+2
+       MOVB R2,@WDSC     WDS W/CPU I/O
+       MOVB R2,@WDRRD    Save WDS #
+       MOVB R2,@WDRWT    Save WDS #
+       LI   R0,DR1       CONVERT FLOOPY TYPE LIST FOR INTERNAL USE
+       LI   R2,8         MAX 8 DRIVES
+       LI   R1,'S '      IF 'S' MAKE 01
+       LI   R3,>0100     IF 'D' MAKE 02
+       LI   R4,>0200
+       LI   R7,2         # TO CHANGE FOR EACH DRIVE
+CONV   MOVB R4,R5        SET TO 'D ' INTIAL
+       CB   *R0,R1       IS IT SINGLE
+       JNE  CONV1        NO
+       MOVB R3,R5        SET TO SINGLE
+CONV1  MOVB R5,*R0+      SET SIDES
+       DEC  R7           DONE SIDES & DENSITY
+       JNE  CONV         NO DO DENSITY
+       INC  R0           SKIP  TRACKS
+       INCT R7           SET TO DO 2 MORE
+       DEC  R2           DONE ALL DRIVES
+       JNE  CONV         NO
+* NOW GET COUNT OF ACTIVE DRIVES
+       CLR  R5
+       LI   R2,8         MAX 8
+       LI   R3,FDRS      START OF FLOPPY'S DRIVES LIST
+BACK   MOVB *R3+,R1      GOT A DRIVE
+       JEQ  BACKC        NO ALL DONE
+       INC  R5           ADD TO ACTIVE COUNT
+       DEC  R2           TRIED ALL 4
+       JNE  BACK         NO
+BACKC  MOV  R5,@DRTOT    TOTAL DRIVES
+       LI   R0,>05FF     KEYBOARD SCAN TYPE
+       MOV  R0,@>8374    SET IT UP
+       LI   R0,MAINWS+6  INITAL WS'S
+       CLR  R1
+INITWS MOV  R1,*R0+
+       CI   R0,>83C0     DONE
+       JNE  INITWS
+       MOVB @BR,R10      GET OP TYPE
+       CB   R10,@INTBIT  CATALOG
+       JNE  NOCAT        NO
+       B    @CATDSK      GO CATALOG A DISK
+NOCAT  BL   @CLRLN       ERASE LINE 2 OF SCREEN
+       DATA MCL,1
+       BL   @CLRLN
+       DATA MCL*6,14
+       BLWP @VMBW        REMOVE ANY DRIVE #S THERE NOW
+       DATA MCL*3+13
+       DATA BLANK
+       DATA 8
+       MOVB @FDRS,R1     MAKE 1ST DRIVE ACTIVE
+       AI   R1,>3000     MAKE IN HEX
+       LI   R0,MCL*3+13  DISPLAY IT
+       BLWP @VSBW
+SET1   BLWP @VMBW
+       DATA MCL*7+1
+SET1D  DATA DSKMIN
+       DATA 17
+       BLWP @VMBW
+       DATA MCL*9+1
+SET1D1 DATA FILMIN
+       DATA 17
+*
+       CLR  @FCBP+254    REMOVE POINTER
+SET1D  DATA DSKMIN
+       DATA 17
+       BLWP @VMBW
+       DATA MCL*9+1
+SET1D1 DATA FILMIN
+       DATA 17
+       MOV  R10,R10      RESTORE OP
+       JNE  BACKUP       NO BACKUP
+       B    @RESTOR      DO RESTORE
+*

@@ -1,0 +1,201 @@
+*
+******************************
+*  SYSTEM SUPPORT UTILITIES  *
+******************************
+*
+VPLAD  EQU  >8305
+GPLSAV EQU  >8316
+PAD    EQU  >8300
+GRMWA  EQU  >9C02
+       EVEN
+*
+VMBW   DATA >8300
+       DATA VMBW0
+VMBW0  BL   @VPADD
+VMBW1  MOVB *R1+,@>8C00
+       DEC  R2
+       JNE  VMBW1
+       RTWP
+*
+VSBW   DATA >8300
+       DATA VSBW1
+VSBW1  BL   @VPADD3
+       MOVB R1,@>8C00
+       RTWP
+*
+KSCAN  DATA >8300
+       DATA KSCAN0
+KSCAN0 LWPI >83E0
+       MOV  R11,@GPLSAV
+       BL   @>000E
+       LWPI >8300
+       MOV  R11,@>83F6
+       RTWP
+*
+VSBR   DATA >8300
+       DATA VSBR0
+VSBR0  BL   @VPADD4
+       MOVB @>8800,@>2(R13)
+       RTWP
+*
+VMBR   DATA >8300
+       DATA VMBR0
+VMBR0  BL   @VPADD1
+VMBR1  MOVB @>8800,*R1+
+       DEC  R2
+       JNE  VMBR1
+       RTWP
+*
+VPADD  LI   R1,>4000
+       JMP  VPADD2
+VPADD1 CLR  R1
+VPADD2 MOV  *R14+,R2
+       MOVB @VPLAD,@>8C02
+       SOC  R1,R2
+       MOVB R2,@>8C02
+       MOV  *R14+,R1
+       MOV  *R14+,R2
+       RT
+*
+VPADD3 LI   R1,>4000
+       JMP  VPADD5
+VPADD4 CLR  R1
+VPADD5 MOV  *R13,R2
+       MOVB @VPLAD,@>8C02
+       SOC  R1,R2
+       MOVB R2,@>8C02
+       MOV  @2(R13),R1
+       MOV  @4(R13),R2
+       RT
+*
+SCLEN  EQU  >8354
+SCNAME EQU  >8356
+CRULST EQU  >83D0
+SADDR  EQU  >83D2
+GPLWS  EQU  >83E0
+HRD    DATA 0
+WDSENT DATA 0                 WDS entry point flag
+FLGPTR DATA 0
+SVGPRT DATA 0
+SAVCRU DATA 0
+SAVENT DATA 0
+SAVLEN DATA 0
+SAVPAB DATA 0
+SAVVER DATA 0
+NAMBUF DATA 0,0,0,0,0
+DLNKWS DATA 0,0,0,0,0
+TYPE   DATA 0,0,0,0,0,0,0,0,0,0,0
+C100   DATA 100
+H20    EQU  $
+H2000  DATA >2000
+DECMAL TEXT '.'
+HAA    BYTE >AA
+BA     BYTE >BA
+SV8002 BYTE 0
+WDRLNK
+DSRLNK DATA DLNKWS,DLENTR     WDS DSRLNK ENTRY NEEDED FOR I/O
+DLENTR CLR  @WDSENT           CLEAR WDS ACCESS FLAG
+DLENT1 MOV  *R14+,R5
+       SZCB @H20,R15
+       MOV  @SCNAME,R0
+       MOV  R0,R9
+       AI   R9,-8
+       BLWP @VSBR
+       MOVB R1,R3
+       SRL  R3,8
+       SETO R4
+       LI   R2,NAMBUF
+LNK$LP INC  R0
+       INC  R4
+       C    R4,R3
+       JEQ  LNK$LN
+       CLR  R1
+       BLWP @VSBR
+       MOVB R1,*R2+
+       CB   R1,@DECMAL
+       JNE  LNK$LP
+LNK$LN MOV  R4,R4
+       JEQ  LNKERR
+       CI   R4,7
+       JGT  LNKERR
+       CLR  @CRULST
+       CI   R4,1              command length 1
+       JNE  LNKNOW            no
+       COC  @H2000,R1         test for wds command
+       JNE  LNKNOW            no
+       SETO @WDSENT           SET WDS AS ENTRY
+*      MOVB @>8002,@SV8002    Save what is at >8002 now in case its a Geneve
+*      MOVB @BA,@>8002        In case its a Geneve must setup to page ROM
+LNKNOW MOV  R4,@SCLEN
+       MOV  R4,@SAVLEN
+       INC  R4
+       A    R4,@SCNAME
+       MOV  @SCNAME,@SAVPAB
+SROM   LWPI GPLWS
+       CLR  R1
+       MOV  @WDSENT,R12       Entry from WDS I/O
+       JEQ  SROM1             NO NOT WDS
+       MOV  @WDSCRU,R12  SET TO CRU BASE FROM MDM5
+       JMP  NOOFF2
+SROM1  LI   R12,>1100
+       CLR  @HRD
+NOROM  MOV  R12,R12
+       JEQ  NOOFF
+       SBZ  0
+NOOFF  AI   R12,>0100
+       CLR  @CRULST
+       MOV  @HRD,@HRD
+       JNE  NODSR
+       CI   R12,>1100
+       JNE  NOOFF1
+       SETO @HRD
+NOOFF1 CI   R12,>2000
+       JNE  NOOFF2
+       LI   R12,>1000
+NOOFF2 MOV  R12,@CRULST
+       SBO  0
+       LI   R2,>4000
+       CB   *R2,@HAA
+       JNE  NOROM
+       A    @TYPE,R2
+       JMP  SGO2
+SGO    MOV  @SADDR,R2
+       SBO  0
+SGO2   MOV  *R2,R2
+       JEQ  NOROM
+       MOV  R2,@SADDR
+       INCT R2
+       MOV  *R2+,R9
+       MOVB @SCLEN+1,R5
+       JEQ  NAME2
+       CB   R5,*R2+
+       JNE  SGO
+       SRL  R5,8
+       LI   R6,NAMBUF
+NAME1  CB   *R6+,*R2+
+       JNE  SGO
+       DEC  R5
+       JNE  NAME1
+NAME2  INC  R1
+       MOV  R1,@SAVVER
+       MOV  R9,@SAVENT
+       MOV  R12,@SAVCRU
+       BL   *R9
+       JMP  SGO
+       SBZ  0
+       LWPI DLNKWS
+       MOV  R9,R0
+       BLWP @VSBR
+       SRL  R1,R13
+       JNE  IOERR
+       JMP  DSRDUN
+NODSR  LWPI DLNKWS
+LNKERR CLR  R1
+IOERR  SWPB R1
+       MOVB R1,*R13
+       SOCB @H20,R15
+DSRDUN MOV  @WDSENT,R1   ENTRY FROM WDS I/O
+*      JEQ  DSRDN1       NO
+*      MOVB @SV8002,@>8002
+DSRDN1 RTWP
+*

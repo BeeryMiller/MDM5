@@ -1,0 +1,326 @@
+BACKP  DATA WS1,BCKST    Backup with a pause for user
+BACKNO DATA WS1,BCKCON   Backup no pause
+*
+BCKST  MOV  @DRTOT,R5    Get # of drives
+       CI   R5,1         More than 1 drive to be used
+*      JEQ  GETD1        No
+       BLWP @VMBW
+       DATA MCL*18+1     Multi drive prompt
+       DATA DPMPT
+       DATA 21
+       LI   R0,MCL*18+22
+GETD2  LI   R3,FDRS      Get list of floppy dirves
+GETD3  MOVB *R3+,R1      GET A DRIVE #
+       AI   R1,>3000
+       BLWP @VSBW
+       INC  R0
+       DEC  R5           DISPLAYED ALL
+       JEQ  GETDRT       YES
+       MOVB *R3,R1       ANYMORE
+       JEQ  GETDRT       NO
+       LI   R1,', '      PUT A COMMA BETWEEN DRIVES
+       BLWP @VSBW
+       INC  R0
+       JMP  GETD3
+GETDRT BLWP @VMBW        Display backup message
+       DATA MCL*20+1
+       DATA BACKM1
+       DATA 10
+       BLWP @VMBW
+       DATA MCL*20+24
+       DATA BACKM2
+       DATA 4
+BACK2  BLWP @BEEP
+       BL   @GETKYC      WAIT FOR A KEY NO RETURN ON ABORT
+       BL   @CLRLN       REMOVE PROMPT
+       DATA MCL*18,1
+BCKCON INC  @BAKCNT      Add to disks used in backup set
+BACK3  MOV  @ACTDR,R10   POINT TO ACTIVE DRIVE #
+       MOVB @FDRS(R10),R10    GET # OF 1ST DRIVE
+       MOV  @BAKCNT,R3   Get hex backup #
+       BLWP @H2DM        Convert hex Backup disk # to decimal
+       DATA BACK#        Store location
+       MOVB R10,R1       Active Drive #
+       AI   R1,>3000
+       LI   R0,MCL*3+13
+       BLWP @VSBW
+       MOVB R10,@DRRD    LOAD DRIVE # OF 1ST DRIVE TO GET ITS STATUS
+       MOVB R10,@DRWT    Set sector write to this drive
+       BLWP @VMBW        SAVE OFF FIB IMAage
+       DATA >1000
+       DATA FIB
+       DATA 256
+       BL   @DUPMEM
+       DATA 256,0,SEC0   Reset sec0 image
+       CLR  @SSEC        GET SECTOR ZERO OF DRIVE
+       BL   @GETSEC      GET A SECTOR
+       DATA SEC0         PUT IT INTO WORK BUFFER
+       DATA DRRD         OP TYPE
+       DATA TSTYP
+TSTYP  BLWP @VMBW        DISPLAY
+       DATA MCL*18+1
+       DATA INITM        PREPAring disk
+       DATA 14
+       BLWP @VMBW
+       DATA MCL*18+16
+       DATA BACK#        Backup #
+       DATA 4
+* Now find where to put the rest of message
+       LI   R0,MCL*18+17 START after a single digit
+TSTYP1 BLWP @VSBR        GET A character
+       INC  R0
+       CB   @SPACE,R1    GOT A space
+       JNE  TSTYP1       NOT Yet
+       MOV  R0,@TSTYPD   PATCH the start address of rest of mess.
+       BLWP @VMBW
+TSTYPD DATA 0
+       DATA INITM1       FOR Backup purposes
+       DATA 10
+       MOV  R10,R1       Copy of dr#
+       SRL  R1,8
+       SLA  R1,1         POINT TO TABLE OF DRIVE DEFAULTS
+       LI   R7,DFTAB-2   DEFAULT TABLE
+       A    R1,R7        POINT TO ITS ENTRY
+       MOV  *R7,R7       NOW HAVE ITS DEFAULT LIST
+       MOV  R7,R6        Make a copy
+       CB   @SEC0+18,*R6+ Are the # of sides the same
+       JNE  INIT         No init disk
+       CB   @SEC0+19,*R6+   Is the density the same
+       JNE  INIT         No init disk
+       CB   @SEC0+17,*R6 # of tracks the same
+       JEQ  RESETD       Yes just reset & verify
+INIT   MOVB R10,@DRIO    load  drive #
+       MOV  R7,R6        get table again
+       MOVB *R6+,@SEC#+1 load sides
+       MOVB *R6+,@SEC#   load density
+*      LI   R0,>1800     SET INTERLACE TO 6 FOR HFDC
+*      AB   R0,@>8350
+       MOVB *R6,@DRIO+1   load tracks
+       BL   @DSRSUT
+       DATA FORM
+       DATA VBUF
+       DATA BADERR
+INIT1  BL   @DUPMEM      Clear out SECTOR 0
+       DATA 256,0,SEC0
+       LI   R2,SEC0+10
+       MOV  @>834A,*R2+  Total # of sectors returned
+       MOVB @DRIO+1,*R2+ Sectors/track
+       LI   R0,DSK       DISK WORD
+       MOVB *R0+,*R2+    'D'
+       MOVB *R0+,*R2+    'S'
+       MOVB *R0+,*R2+    'K'
+       MOVB *R0+,*R2+    ' '
+       MOVB *R6,*R2+     # OF TRACKS
+       MOV  R7,R6        Back to start of map
+       MOVB *R6+,*R2+    # of sides
+       MOVB *R6+,*R2+    Density
+RESETD LI   R2,SEC0      put in diskname
+       LI   R1,10        NAME AND DISK #
+       LI   R0,BACKN     Name
+RESET1 MOVB *R0+,*R2+
+       DEC  R1
+       JNE  RESET1
+       CLR  R12          Init count of good sectors
+       MOV  @SEC0+10,@TOTFSC Save total # of sectors on floppy
+       BL   @DUPMEM      set the bitmap to all used
+       DATA 200,0,SEC0+56
+       LI   R4,>00FF
+       MOV  @SEC0+18,R1  test for Quad disk
+       CI   R1,>0202     Double sided and Density
+       JNE  RESET3       No
+       CB   @SEC0+17,@QD 80 tracks
+       JNE  RESET3
+       SWPB R4
+RESET3 MOVB R4,@QDF      Set Quad flag according to disk tpye
+       MOV  @SEC0+10,R8  Total # of sectors to test
+       CLR  @SSEC        write out new sector zero
+       BL   @WRTSEC
+       DATA SEC0
+       DATA DRWT
+       DATA BADERR       If 0 is bad disk canot be used
+       CLR  R9           Sector # to verify
+RESET4 MOV  R9,@SSEC     sector # to read
+       BL   @GETSEC
+       DATA WBUF1        Data location
+       DATA DRRD         op type
+       DATA BADERR       Cannot use disk
+       MOV  R9,R1        Get sector #
+       MOV  R1,R0
+       SRL  R1,3
+       MOVB @QDF,R4      Quad disk
+       JEQ  RESETF       No
+       SRL  R0,1
+       SRL  R1,1
+RESETF LI   R2,>0100
+       ANDI R0,7
+       JEQ  RESETG
+       SLA  R2,0
+RESETG SOCB R2,@SEC0+56(R1) Set bit
+       INC  R12          Add to count of good sectors
+RESET5 INC  R9           Next sector
+       C    R9,R8        All verfied
+       JNE  RESET4       No do next
+       MOV  R12,@GOODSC  Save count
+       BLWP @VMBR        RESTOre fib sector
+       DATA >1000
+       DATA FIB
+       DATA 256
+       BL   @CLRLN       Remove verify message
+       DATA MCL*18,1
+       LI   R0,1         Set to start write at sector 1
+       MOV  R0,@BSEC
+       MOV  @BAKCNT,R3   Display # of disks in backup
+       CLR  @DFULL       RESET DISK FULL FLAG
+       BLWP @H2DM
+       DATA DTEXT
+       BLWP @VMBW
+       DATA MCL*11+18
+       DATA DTEXT
+       DATA 4
+       RTWP
+*
+BADERR BLWP @VMBR        RESTOre fib sector
+       DATA >1000
+       DATA FIB
+       DATA 256
+       BL   @CLRLN       Remove verify message
+       DATA MCL*18,1
+       BLWP @VMBW        Ask for a new disk
+       DATA MCL*18+1
+       DATA NEWD
+       DATA 26
+       MOV  R10,R1       Get # of drive in error
+       AI   R1,>3000
+       LI   R0,MCL*18+27 Display #
+       BLWP @VSBW
+       BL   @GETKYC      Wait for 'c'
+       BL   @CLRLN
+       DATA MCL*17,2     ERASE LINES 17,18
+       B    @BACK3       Start over
+*
+*
+SETPR  DATA WS4,SR01          SETUP INTIAL PATH FOR ROOT
+SETPA  DATA WS4,SR02          SETUP PATH FOR ALL OTHER DIRS
+*
+SR01   LI   R1,5            PATHNAME  LENGTH = 5 FOR WDS?.
+       MOV  R1,@PATHL
+       MOV  R1,@PATHLN   SET DISPLAY PATH LENGTH
+       LI   R1,PATHS+5    SET TO DO PATHS PAST ROOT
+       MOV  R1,@SRBUF+4
+       CLR  R7           POINTER INTO SRBUF
+       CLR  @SRBUF       ROOT DIRECTORY
+       CLR  @SRBUF+2     FIRST SUB-DIR
+SR01R  CLR  R1           GET SECTOR 0
+       BL   @GETSCW      GET ROOT SECTOR FROM WDS
+       DATA WBUF1        BUFFER
+       DATA WDRRD
+       DATA SR01R        ERROR RTN
+       LI   R1,WBUF1     GET The volume name to fib
+       LI   R0,FIB+170
+       LI   R2,10
+SR01A  MOV  *R1+,*R0+
+       DECT R2
+       JNE  SR01A
+SR01AR MOV  @WBUF1+24,R1 GET ROOTS FDR POINTER TABLE ADDRESS
+       BL   @GETSCW
+       DATA FCBP
+       DATA WDRRD
+       DATA SR01AR       ERROR RTN
+       CLR  @FCBP+254    REMOVe parent pointer
+       JMP  SR05A        SEARCH ROOT 1ST
+*
+SR02R  MOV  @SRBUF(R7),R1     RETRY SECTOR #
+       JMP  SR02R1
+SR02   MOV  @SRBUF(R7),R1     GET SECTOR #
+       BL   @GETSCW      GET A DIR
+       DATA WBUF1
+       DATA WDRRD
+       DATA SR02
+       MOV  @SRBUF+2(R7),R2
+       INCT @SRBUF+2(R7)
+       MOV  @WBUF1+28(R2),R1  SET SECTOR # OF THIS SUB
+       JEQ  SR07              NO MORE SUBS IN THIS PATH
+       AI   R7,6              NEW ENTRY
+       MOV  R1,@SRBUF(R7)
+       CLR  @SRBUF+2(R7)
+SR02R1 BL   @GETSCW      GET DIR SECTOR FROM WDS
+       DATA WBUF1        BUFFER
+       DATA WDRRD
+       DATA SR02R        ERROR RTN
+SR02R2 MOV  @WBUF1+24,R1 GET DIRS FDR POINTER TABLE ADDRESS
+       BL   @GETSCW      GET TABLE OF FILE FDR POINTERS
+       DATA FCBP
+       DATA WDRRD
+       DATA SR02R2
+       CLR  @FCBP+254
+       LI   R0,WBUF1     PATHNAME
+       MOV  @SRBUF-2(R7),R1   GET DESTINATION
+       LI   R2,10
+SR04   MOVB *R0+,*R1
+       CB   @SPACE,*R1+  GOT A SPACE
+       JEQ  SR05         YES
+       DEC  R2           ALL 10 TESTED
+       JNE  SR04         NO
+       INC  R1           CORRECT
+SR05   MOV  R1,@SRBUF+4(R7) INDICATE POSITION IN PATHS
+       DEC  R1           BACK UP
+       MOVB @DECMAL,*R1
+       LI   R0,PATHS   PATH BUFFER
+       S    R0,R1        GET LENGTH
+       INC  R1
+       MOV  R1,@PATHLN
+       SWPB R1
+       MOVB R1,@PATHL   SET LENGTH - 5 FOR WDS?.
+SR05A  BL   @CLRLN       REMOVE CURRENT PATH DISPLAYED
+       DATA 0,1          FROM TOP LINE
+       BLWP @VMBW
+       DATA 1
+       DATA PATHS
+PATHLN DATA 5
+       MOVB @WDSC,@DRIO  SET WDS # FOR SET PATH
+SR05AR BL   @DSRSUB
+       DATA SETPTH
+       DATA PATHL        POINTER TO LENGTH & PATHNAME
+       DATA SR05AR       ERROR
+       MOV  @WBUF1+22,R4  SET COUNT OF FILES & SUBS
+       MOVB @BUTYP,R1    BACKUP ONLY CHANGED FILES
+       JEQ  BFLCT2       YES MUST TEST FILES
+       SRL  R4,8         TOTAL files in directory
+BFLCT1 MOV  R4,@FIB+246  SAVE this #
+       MOV  R4,@FIB+248  ANOTHer copy
+       RTWP              RTN To caller
+BFLCT2 CLR  R3           INIT count of modified files
+       SRL  R4,8         GET COUNT OF FILES TO TEST
+       JEQ  BFLCT5       IF NO FILES DONE
+       BLWP @VMBW        SAVE OF THE WORK BUFFER
+       DATA >1000
+       DATA WBUF1
+       DATA 256
+       CLR  @FCBP+254    REMOVE DIRECTORY POINTER
+       LI   R5,FCBP
+BFLCT3 MOV  *R5,R1      FILE FDR TO GET
+       BL   @GETSCW
+       DATA WBUF1
+       DATA WDRRD
+       DATA BFLCT3
+       INCT R5
+       MOVB @WBUF1+12,R0  GET FILE STATUS BYTE
+       COC  @UPBIT,R0    BACKUP NEEDED?
+       JNE  BFLCT4       NO
+       INC  R3
+BFLCT4 DEC  R4           TRIED ALL FILES?
+       JNE  BFLCT3       NO
+       BLWP @VMBR
+       DATA >1000
+       DATA WBUF1
+       DATA 256
+BFLCT5 MOV  R3,R4        FILES COUNT
+       JMP  BFLCT1       YES SHOW THIS #
+*
+SR07   AI   R7,-6        PREVOIUS ENTRY
+       JGT  SR02
+       JEQ  SR02
+       SETO @DONEP       ALL DONE
+       RTWP
+*
+*

@@ -1,0 +1,87 @@
+       UNL
+* MYARC Disk Manager V (MDM5)
+*
+* Disk Manager III written by David Woods.
+* Disk Manager V upgrade written by Mike Dodd.
+* Final version of Disk Manager V by John Birdwell
+*
+* 95% of comments written by Mike Dodd, including these.
+*
+* Thanks to J. Peter Hoddie and D.R. Fudge for moral support. Without
+* them, I'd go crazy.
+*
+       DEF  GO,DMEND,DMDATA
+       DEF  FCBASE,THEEND
+       AORG >A000
+       B    @GO               start of program
+       TITL 'Program defaults'
+       PAGE
+       COPY "DEFAULTS"
+       TITL 'RAMdisk setup routine'
+       PAGE
+       COPY "RAMDISK"
+       TITL 'Repeating keyboard scanning routine'
+       PAGE
+       COPY "KBSCAN"
+       TITL 'Start and General purpose subs'
+       PAGE
+       COPY "TST"
+       TITL 'ASCII <---> Binary conversion routines'
+       PAGE
+       COPY "CONVERT"
+       TITL 'Disk maintenance routines'
+       PAGE
+       COPY "DISKMAIN"
+       TITL 'Disk operation execution'
+       PAGE
+       COPY "EXECOP"
+       TITL 'Disk system tests'
+       PAGE
+       COPY "SYSTESTS"
+       TITL 'Disk initialization'
+       PAGE
+       COPY "FORMAT"
+       TITL 'Winchester format setup'
+       PAGE
+       COPY "FORMATWIN"
+       TITL 'Set program defaults'
+       PAGE
+       COPY "SETDEFAULT"
+       TITL 'Sector copy routine'
+       PAGE
+       COPY "CLONE"
+       TITL 'File search routine'
+       PAGE
+       COPY "SEARCH"
+       TITL 'DSK1 emulation selection'
+       PAGE
+       COPY "DSKEMU"
+       TITL 'Print Hard disk directory tree'
+       PAGE
+       COPY "PRTTREE"
+       TITL 'PRTLNK routine (DSRLNK)'
+       PAGE
+       COPY "PRTLNK"
+       TITL '80 track check'
+       PAGE
+       COPY "80TK"
+       TITL 'Get drive number & subdirectory'
+       PAGE
+       COPY "GETDRV"
+       TITL 'Directory operations'
+       PAGE
+       COPY "DIR"
+       TITL 'System initialization'
+       PAGE
+       EVEN
+FCBASE EQU  $
+       COPY "SETUP"
+       TITL 'PROGRAM DATA'
+       PAGE
+DMDATA EQU  $
+       AORG >2000
+       COPY "DATADORG"
+       TITL 'System buffers'
+       PAGE
+DMEND  COPY "BUFFERS"
+THEEND END

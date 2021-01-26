@@ -1,0 +1,721 @@
+*** MODULE NAME - GETDRV ***
+* get drive number
+* if winchester, select subdirectory either by menu or full pathname
+* by mike dodd for the myarc disk manager v (MDM 5)
+* started 11/12/87
+*
+* changed about half a million times by now (3/17/88) <sigh>
+* (500,001 times, now - 3/20/88)
+*
+*  access with:
+*  BLWP @GETDRV
+*  DATA screen location to ask questions
+*  BYTE... >00 - floppy or hard, >01 - floppy only, >02 - hard only
+*          >03 - don't ask drive number - just get subdirectory.
+*  BYTE... >00 - main drive, >01 - copy drive
+*
+GETDRV DATA GETDWS,GD01
+*
+* start of routine <horrors>
+*
+GD01   BL   @CLRCOM           Clear command lines
+       BL   @CLTOP            Clear top of screen
+       CLR  @HEADUP           this way shohed will calculate bitmap
+       MOV  @COMSV1,@COMSV3   save
+       MOV  @COMSV2,@COMSV4   save
+       LI   R6,GDL4           assume main
+       MOVB @1(R14),R0        get main/copy flag
+       JEQ  $+6               yup, it was main
+       LI   R6,GDL5           copy list
+       MOV  *R6+,R0           address of routine to set source/dest
+       BL   *R0               execute
+       MOV  R6,@GDSVR6        save r6 (command parser kills it)
+       MOVB *R14,R0           get floppy only or hard only flag
+       JEQ  GD02
+       SRL  R0,8              to lsby
+       DEC  R0                floppy only?
+       JEQ  GD03              yes
+       DEC  R0                hard only?
+       JEQ  GD04              yes
+*  >03 opcode - get subdir only
+       MOV  @DIRAUX,R0
+       CLR  *R0
+       MOV  @HRDX,R1
+       ABS  *R1               hard or floppy?
+       JNE  $+4               hard
+       INC  *R0               floppy
+       INCT R14               past flags
+       JMP  GDTOP
+*
+* ask floppy or hard
+* unless assign set to floppy or hard
+*
+*GD02   CB   @ASTYP,@ASF       Floppy
+*      JEQ  GD03              yes
+*      CB   @ASTYP,@ASH       Hard
+*      JEQ  GD04              yes
+* Must be standard
+GD02   BL   @SHOW$1           display stuff
+       DATA GWORFT            text address
+       DATA 22*SCRWID+10      screen address
+*  get keypress _without_ blinking cursor
+       BL   @COMNB
+       DATA GDL1              F or H
+* was F - floppy diskette, obviously
+GD03   BL   @CLRCOM
+       MOV  @HRDX,R5
+       CLR  *R5               floppy
+       LI   R0,GDFCX
+       MOV  R0,@GDHF1
+       LI   R0,GDL7
+       MOV  R0,@GDHF2
+       MOV  @DIRAUX,R0
+       CLR  *R0
+       INC  *R0               set to 1 - that is the default sector for
+       LI   R0,>3100          SET TO DEFAULT OF DRIVE 1
+       CB   @MAXFLP,@Y        MORE THAN 1 FLOPPY DRIVE
+       JEQ  GD06              NO
+       BL   @SHOW$1
+       DATA GDRVFT            text
+       DATA 19*SCRWID+1       screen address
+       LI   R1,19*SCRWID+28   screen addr
+       BL   @COMB             use a cursor, this time
+       DATA GDL2              floppy drive list
+* was H - must be a hard driv
+GD04   BL   @CLRCOM
+       LI   R0,GDCOMX
+       MOV  R0,@GDHF1
+       LI   R0,GDL6
+       MOV  R0,@GDHF2
+       MOV  @DIRAUX,R0
+       CLR  *R0               root directory
+       MOV  @HRDX,R5
+       SETO *R5               winchester
+       LI   R0,>3100          SET TO HARD DRIVE 1
+       CB   @MAXHRD,@Y        MORE THAN 1 HARD DRIVE
+       JEQ  GD06              ONLY WDS1
+       BL   @SHOW$1
+       DATA GDRVWT            text
+       DATA 19*SCRWID+1       screen atdress
+       LI   R1,19*SCRWID+26   screen address
+       BL   @COMB             use cursor
+       DATA GDL3              hard drive list
+* some number entered in
+* by now, msby of r0 contains ascii number from 1-4.
+* hard/floppy flag already been set
+GD06   MOV  @GDSVR6,R6        restore r6
+       MOV  *R6+,R7           maindr/copydr - ascii byte
+       MOV  *R6+,R4           maind/copyd - hex word
+       MOVB R0,*R7            set ascii byte
+       SRL  R0,8              to lsby
+       AI   R0,->30           no ascii offset
+       MOV  R0,*R4            set hex word
+       MOV  R0,@DRVNUM        set as current drive number
+       MOV  *R6,@X1LOAD
+       INCT R14               past flags
+GDTOP  MOV  @PATHX,R0
+       MOVB @H00,*R0+
+       CLR  @LEVEL            level number
+       SETO @BASELV           base level number
+       MOV  @STRSUB,R7
+       MOV  R7,@TOPSL
+       MOV  R7,@SUBLIM
+GDLS   MOV  R7,@CURSUB
+       MOV  @X1LOAD,R0
+       LI   R15,GD07A         if ignore format=on and error, goto GD07A
+*
+GDLS1  BL   *R0               execute c1load or v1load
+       MOV  R3,@GD06B
+*  if root directory, build entry with volume name
+       MOV  @DIRAUX,R0
+       MOV  *R0,R0            get au#
+       CI   R0,1              root is 0 on hard, 1 on floppy
+       JH   GD06A             not root - don't sweat it
+       BL   @GD60             build root entry
+GD06A  BL   @SHOHED
+       DATA >0000             screen address
+GD06B  DATA >0000             address of sector 0
+       MOV  @HRDX,R5          SHOHED uses R5 - we have to restore it
+       MOV  @CURSUB,R7        start of subdirectory stack
+       ABS  @IGASUB           ignore any subdirectories?
+       JNE  GDRT              yes
+       ABS  @IGNFER           ignore format errors flag on?
+       JNE  GDRT              yes - must be formatting the winchester
+       ABS  *R5               see what this is
+       JNE  GD08              hard drive
+       ABS  @IGFSUB           ignore floppy subs (only on create)?
+       JEQ  GD08              no
+       JMP  GDRT              return
+GD07A  LI   R15,>2000         eq bit on
+       JMP  $+4               return
+GDRT   CLR  R15               eq bit off
+       BL   @VDPFIL           clear middle of screen
+       DATA 02*SCRWID,19*SCRWID,>2000
+       BL   @CLRCOM           clear command line
+       MOV  @COMSV3,@COMSV1   restore
+       MOV  @COMSV4,@COMSV2   restore
+*  set path name by calling pathmn.... pathmn uses sames ws as this does,
+*  so just branch into it's entry address, and let it rtwp out
+*  if there was an I/O error on the last access and this is a format operation
+*  then do the rtwp now
+       MOVB @>8350,R0         any pending i/o error
+       JEQ  $+10              no
+       ABS  @FOROPR           format operation
+       JEQ  $+4               no
+       RTWP                   return
+       B    @PATH1
+GD08   MOV  R7,R0
+       BL   @SCRGEN
+       DATA GDHEDT,GDHEDA,2
+       MOV  R0,R7
+       MOV  @GD06B,R3         shohed uses R3 - restore
+       ABS  *R5               HARD DRIVE
+       JEQ  GD08B1            FLOPPY NO EMULATION AVAILABLE
+GD08A1 BL   @VMBW             EMULATION:
+       DATA 2*SCRWID+1,CATHL2+1,10
+       MOV  @EMUFDR,R0        EMULATION FDR
+       JEQ  GD08B1            NONE SET
+       LI   R1,TEMP
+       BLWP @RSHRD            GET NAME OF EMULATION FILE
+       DATA GD08A1
+       BL   @VMBW
+       DATA 2*SCRWID+10,TEMP,10
+*
+GD08B1 CLR  @CURSL            current line is top of screen
+*
+* format for subdirectory stack:
+*  00 AU # of directory entry                   word
+*  02 level (0=root, 1=next, 2=next, etc.)      word
+*  04 name                                      10 bytes
+*  14 number of subdirectories                  word
+*  16 number of files                           word
+*  18 date of creation                          word
+*  (total length = 20 bytes)
+* end of stack entry is >FFFF
+*
+* regs:
+*  R3 = address of volume sector
+*  R7 = address of stack entry
+       AI   R3,>17            POINT TO SUB-DIR COUNT
+       MOVB *R3,R6            SAVE COUNT
+       SRL  R6,8
+       AI   R3,>1C->17        point to subdirectories
+       ABS  *R5               hard drive?
+       JNE  GD09              yup
+*    special handler for floppy subdirs
+       AI   R3,-8             back up to start of subdir pointers
+       LI   R6,3              maximum three subdirs on a floppy
+* ADDED FIX TO HANDLE HRD'S SINCE IT APPEARS TO PUT A HEX 01 IN THE 1ST LOACTION
+* WHERE A SUB-DIRECTORY WOULD BE. THIS WILL ALSO KEEP THE DATE FROM MY DISK
+* UTILITIES PROGRAM FROM APPEARING AS A SUB-DIRECTORY. THE FIX IS TO TEST
+* if there is a valid FDR for a sub-directory
+* IF THERE IS ONE THEN IT CAN NOT BE A VALID SUB-DIRECTORY
+GD08A  MOV  R3,R0             SAVE ADDRESS
+       AI   R0,10             Point to the FDR location
+       MOV  *R0,R0            If its zero then not a sub-directory
+       JEQ  GD19
+       MOVB *R3,R0            get first char of subdir name
+       JEQ  GD19              all done, folks
+       MOV  @10(R3),*R7+      get sector number
+       CLR  *R7+              always level 0 on a floppy
+       MOV  R3,R0             source
+       MOV  R7,R1             destination
+       BL   @MOVE1            move bytes
+       DATA 10                ten of them, to be exact
+       MOV  R0,R3             restore pointer
+       MOV  R1,R7             new pointer in stack
+       CLR  *R7+              no nested subdirs on floppy
+       MOV  *R3+,R0           get sector # of file pointer block
+GD08B  LI   R1,TEMP           temp buffer
+       BLWP @RSCPU            read file pointer block sector
+       DATA GD08B
+*   count the number of files in the fcb
+       LI   R1,TEMP
+       CLR  *R7               0 files right now....
+GD08C  MOV  *R1+,R0           get data
+       JEQ  GD08D             null
+       INC  *R7               add one
+GD08D  CI   R1,TEMP+254       at end?
+       JNE  GD08C             nope
+       INCT R7                past number of files
+       CLR  *R7+              null date field
+       DEC  R6                any more to check?
+       JNE  GD08A             yes - next entry
+       JMP  GD19              flag end
+*
+GD09   MOV  *R3+,R0           get AU# of subdir entry
+       JEQ  GD19              end
+       MOV  R0,*R7+           store AU #
+       MOV  @LEVEL,*R7+       store level number
+       LI   R1,TEMP           good buffer location
+       BLWP @RSHRD            read directory sector
+       DATA GD09
+       MOV  R1,R0             source
+       MOV  R7,R1             destination
+       BL   @MOVE1            move bytes
+       DATA 10                ten of them, to be exact
+       MOV  R1,R7             new pointer in stack
+       MOVB @TEMP+>17,R1      number of subdirectories
+       SRL  R1,8              to lsby
+       MOV  R1,*R7+           store
+       MOVB @TEMP+>16,R1      number of files
+       SRL  R1,8              to lsby
+       MOV  R1,*R7+
+       MOV  @TEMP+>14,*R7+    date of creation
+       DEC  R6                Done max. # of subs
+       JNE  GD09              No, next entry
+*
+* loaded all subdirectories into stack
+GD19   SETO *R7               indicate end
+       MOV  R7,@SUBDST        end of table
+       AI   R7,-SUBLEN        since first entry is volume name
+       ABS  @CONTFG           ENTRY FROM CONTINUE
+       JEQ  $+10              NO
+       CLR  @CONTFG           CLEAR FLAG
+       B    @GDRT             DO CONTINUE
+       C    R7,@STRSUB        at start of table?
+       JNE  GD20              no - must have been something
+       B    @GDRT             exit - there are no subdirectories
+* display the subdirectory list
+GD20   MOV  @TOPSL,R7         pointer to buffer info in top file
+       CLR  R5                current screen line we're printing
+GD20A  BL   @FILL
+       DATA VCOM,40,>2020     fill with spaces
+       MOV  R2,R4             get >2020 from r2 into r4
+       LI   R1,VCOM
+       MOV  R7,R0             pointer to buffer info
+       C    *R0+,@HFFFF       is au# the end flag?
+       JEQ  GD28D             yes..... write a blank line
+       INCT R0                past level number
+*      MOV  *R0+,R2           level
+*      S    @BASELV,R2
+*      JEQ  GD23
+*GD22   MOV  R4,*R1+           two spaces
+*      DEC  R2                any more levels down?
+*      JNE  GD22              no
+GD23   BL   @MOVE1
+       DATA 10                ten characters for the name
+       MOV  R0,R7             save
+       MOV  R1,R3             save
+       MOVB @H20,*R3+
+       MOVB @H20,*R3+
+       MOVB @H20,*R3+
+       MOVB @H20,*R3+
+       MOV  *R7+,R0           get number of subdirs
+       LI   R1,VCOM+40        place to put it
+       BLWP @BINDEC
+       MOVB @VCOM+42,*R3+
+       MOVB @VCOM+43,*R3+
+       MOVB @VCOM+44,*R3+
+       MOVB @H20,*R3+
+       MOVB @H20,*R3+
+       MOVB @H20,*R3+
+       MOVB @H20,*R3+
+       MOV  *R7+,R0           get number of files
+       LI   R1,VCOM+40        place to put it
+       BLWP @BINDEC
+       MOVB @VCOM+42,*R3+
+       MOVB @VCOM+43,*R3+
+       MOVB @VCOM+44,*R3+
+       MOVB @H20,*R3+         space
+       MOVB @H20,*R3+         space
+       MOVB @H20,*R3+         space
+       MOVB @H20,*R3+         space
+       MOV  *R7+,R0           get date of creation
+       MOV  R0,R2
+       SRL  R2,5
+       ANDI R2,>F
+       BL   @GDNC             month
+       MOVB @H2F,*R3+
+       MOV  R0,R2
+       ANDI R2,>1F
+       BL   @GDNC             date
+       MOVB @H2F,*R3+
+       MOV  R0,R2
+       SRL  R2,9
+       BL   @GDNC             year
+GD26   CLR  R4                offset
+       C    @CURSL,R5         this the current line?
+       JNE  GD27              no
+       LI   R4,>8080          inverse video, then
+GD27   MOV  R5,R0             line on screen
+       BL   @FINDLN           make r1=screen location
+       BL   @WRITEV           set up the vdp write address
+************
+    C    @-18(R7),@BASELV  this the base level?
+    JEQ  GD27A             yes
+    MOVB @H20,*R8
+    MOVB @H20,*R8
+************
+GD27A  LI   R0,VCOM
+       LI   R1,36             36 chars
+GD28   AB   R4,*R0            add inverse video offset
+       MOVB *R0+,*R8          write to vwd
+       DEC  R1                any more?
+       JNE  GD28
+       C    @-18(R7),@BASELV  this the base level?
+       JNE  GD28A             no
+       MOVB @H20,*R8
+       MOVB @H20,*R8
+*
+GD28A  INC  R5
+       CI   R5,16             any more on screen?
+       JNE  GD20A             yes.....
+       JMP  GD28F
+GD28D  MOV  R5,R0
+       BL   @FINDLN
+       MOV  R1,@GD28E         vdp address
+       LI   R0,21*SCRWID
+       S    R1,R0             get length to fill
+       MOV  R0,@GD28E+2
+       BL   @VDPFIL
+GD28E  DATA 0,0,>2000
+GD28F  BL   @GENCOM           generate command line
+GDHF1  DATA GDCOMX
+       MOV  @CURSL,R6
+       MPY  @SUBLD,R6
+       A    @TOPSL,R7         R7 = pointer to current line buffer
+       MOV  @CURSL,R6
+GD29   MOV  R7,@GDSVR7        save, as comnb uses
+       BL   @COMNB
+GDHF2  DATA GDL6              command list
+*
+* ENTER a subdirectory
+*
+GD30   MOV  @GDSVR7,R7
+GD30A  C    *R7,@HFFFF        anything there?
+       JEQ  GD29              nope
+       MOV  @HRDX,R0          get hard/floppy flag
+       ABS  *R0               hard or floppy
+       JNE  GD30F             hard. . . handle normally
+*   floppy
+       MOV  @2(R7),R0         get level number
+GD30P  JLT  GD29              negative number - exit
+       MOV  @BASELV,R0
+       JEQ  GD29
+       MOV  @DIRAUX,R0
+       MOV  *R7,*R0           new AU number of directory
+       MOV  R7,R0             source
+       MOV  @STRSUB,R1
+       AI   R1,SUBLEN         past volume name entry
+       MOV  R1,R7
+       MOV  R1,@SUBLIM
+       BL   @MOVE1
+       DATA SUBLEN
+       MOV  @LEVEL,@BASELV
+       INC  @LEVEL            show that we're in a subdir
+       MOV  R7,@CURSUB
+       C    *R7+,*R7+         point to name
+       MOV  @PATHX,R6         get address of pathname
+       MOV  R6,R1
+       INC  R1                past length byte (not needed right now)
+       CLR  R0                length so far
+       LI   R2,10             maximum length
+GD30M  MOVB *R7+,*R1
+       CB   *R1+,@H20         space?
+       JEQ  GD30N             yes
+       AI   R0,>0100          length in msby
+       DEC  R2                any more valid?
+       JNE  GD30M             yup
+       INC  R1                correct for next line
+GD30N  MOVB @DECMAL,@>FFFF(R1)        period - for rename sub
+       AI   R0,>0100          Add 1 for period
+       MOVB R0,*R6            set length byte
+*   reload volume sector and file pointers block sector
+       MOV  @X1LOAD,R0
+       LI   R15,GD07A         if ignore format=on and error, goto GD07A
+       BL   *R0               execute c1load or v1load
+       MOV  R3,@GD30O
+       BL   @SHOHED
+       DATA >0000             screen address
+GD30O  DATA >0000             address of sector 0
+       MOV  @CURSUB,R7
+       MOV  R7,@TOPSL
+       AI   R7,SUBLEN
+       CLR  @CURSL
+       B    @GD19
+*   enter hard drive subdirectory
+GD30F  MOV  @DIRAUX,R0
+       MOV  *R7,*R0           new AU number of directory
+       MOV  @2(R7),R0         level number of this directory
+       JLT  GD30P             negative number - exit
+       MOV  R0,@LEVEL         level number
+       MOV  R0,@BASELV        base level number
+       INC  @LEVEL            next level
+       INC  R0                since the damn volume name is the 1st entry
+*                                     and is marked level minus one
+       MPY  @SUBLD,R0         r1 = offset in buffer for this level
+       A    @STRSUB,R1        points to entry for 1st in this level
+       MOV  R7,R0             entry for this subdi
+       MOV  R1,@TOPSL         top of screen
+       MOV  R1,@SUBLIM        top limit
+       BL   @MOVE1
+       DATA SUBLEN            move the bytes out!
+       MOV  R1,R7             save end of table
+       MOV  R1,R0
+       LI   R1,SUBLEN-2       point to level number
+       S    R1,R0
+       MOV  @PATHX,R6         pathname address
+       MOV  R6,R1             address of pathname
+* and now.... find the place in the pathname to store this string
+* we can't just add on to the end, as user might be going back
+* a level, instead of forward. see what i mean?
+       INC  R1                past length byte (we don't need it)
+       CLR  R3                length of pathname
+       MOV  *R0+,R2           get level number
+       JEQ  GD30E             first level
+GD30B  INC  R3                length
+       CB   *R1+,@DECMAL      period?
+       JNE  GD30B             no
+       DEC  R2                this level?
+       JNE  GD30B             get another level
+GD30E  LI   R2,10             maximum length
+GD30C  MOVB *R0+,R4           get character
+       CB   R4,@H20           space
+       JEQ  GD30D             yes
+       INC  R3                length
+       MOVB R4,*R1+           save char
+       DEC  R2                any more to check?
+       JNE  GD30C             no
+GD30D  MOVB @DECMAL,*R1+      final period
+       INC  R3                count final period in the length
+       SWPB R3                to MSBy
+       MOVB R3,*R6            resave new length
+       B    @GDLS             load the directory
+*
+* Down Arrow
+*
+GD31   MOV  @CURSL,R6
+       MOV  @GDSVR7,R7
+       C    @SUBLEN(R7),@HFFFF       is there a next entry?
+GD31A  JNE  $+6
+       B    @GD29             no, no more entries
+       CI   R6,15             at end?
+       JEQ  GD33              yes
+       INC  @CURSL            no.... next line
+GD32   B    @GD20             redisplay
+*  here if we have to scroll the screen
+GD33   A    @SUBLD,@TOPSL     top line is one down
+GD34   B    @GD20             redisplay
+*
+* Up Arrow
+*
+GD35   MOV  @CURSL,R6
+       MOV  @GDSVR7,R7
+*      C    R7,@STRSUB        at top of entries?
+*      JEQ  GD31A
+       C    R7,@SUBLIM        top limit?
+       JEQ  GD31A
+       ABS  R6                at top of screen?
+       JEQ  GD36
+       DEC  @CURSL            down
+       JMP  GD32              redisplay
+GD36   S    @SUBLD,@TOPSL     file above
+       JMP  GD34              redisplay
+*
+* Pg Up (CTRL X <warped, no?> or FCTN 6)
+*
+GD37   MOV  @TOPSL,R7         top line
+       LI   R0,SUBLEN*16      bytes in table / page
+       S    R0,R7
+       MOV  @SUBLIM,R0
+       C    R7,R0             past top of info
+       JHE  GD37A             not at very top
+       MOV  R0,R7             the top line, period
+GD37A  MOV  R7,@TOPSL
+       CLR  @CURSL            current line at top
+       JMP  GD34              redisplay
+*
+* Pg Dn (CTRL E or FCTN 4)
+*
+GD38   MOV  @TOPSL,R7         top line
+       AI   R7,SUBLEN*16      bytes in table / page
+       MOV  @SUBDST,R0
+       C    R7,R0             past top of info
+       JL   GD37A             not at very top
+       MOV  @GDSVR7,R7        RESTORE R7
+GD38A  B    @GD29             illegal keypress, then
+*
+* Pathname entry
+*
+GD39   MOV  @PATHX,R6
+       MOV  @GDSVR7,R7
+       LI   R0,>0006          screen address
+       MOV  R6,R1             cpu buffer
+       BLWP @INPUT
+       DATA 34                max characters
+       DATA '  '              two disallowed characters (space)
+       JOC  GD38A             abort key was used
+       JEQ  GD38A             we're already here!
+*  write trailing period (if not already in)
+       MOV  R6,R1             address of pathname
+       MOVB *R1,R0            length
+       JEQ  GD39              null length not allowed
+       SRL  R0,8              to LSBy
+       A    R0,R1             point to last character in pathname
+       CB   *R1+,@DECMAL      last character a period?
+       JEQ  GD43              yes
+       MOVB @DECMAL,*R1+      then make the last character a period
+       AB   @H01,*R6          new length
+*  find the subdirectory
+*  will have to start with first pathname in root directory and work
+*  our way down. we'll use vcom as a 10 character buffer for holding
+*  the pathname we're looking for.
+*  be sure to maintain the stack on our way down
+GD43   MOV  @DIRAUX,R0
+       CLR  *R0               directory au #
+       MOVB @H00,*R1+         set to >00 to indicate end
+       MOV  @STRSUB,R7
+       CLR  @LEVEL            level number = 0
+       INC  R6                past length byte, which we don't need
+*  load the volume and file list
+       MOV  @X1LOAD,R0
+       BL   *R0               either c1load or v1load, depending...
+       BL   @GD60             build entry for volume name
+*  first, clear vcom+10 to spaces
+*  (can't use vcom.... prtlnk (dsrlnk) routine uses vcom for temporary
+*  storage)
+GD44   BL   @FILL
+       DATA VCOM+10,11,>2000  fill with 11 spaces
+       LI   R1,VCOM+10        buffer
+GD45   MOVB *R6+,*R1          write character of pathname
+       CB   *R1+,@DECMAL      a period?
+       JNE  GD45              no, keep going 'til we find one
+       MOVB @H20,@>FFFF(R1)   make final char a space, as opposed to .
+*  we'll mess with the stack when we've found this pathname.... otherwise,
+*  it might be non-existant
+       MOV  R3,R4             save buffer location
+       AI   R3,>1C            point to subdirectory pointer list
+GD46   MOV  *R3,R0            AU #
+       JEQ  GD47              whoops, no more to try - not found
+       LI   R1,TEMP           buffer location
+       BLWP @RSHRD            read a sector from the winchester
+       DATA GD46              retry address
+       LI   R2,VCOM+10        first string
+       BL   @COMP$            see if equal or not
+       JEQ  GD48              they are - we found this pathname!
+       INCT R3                point to next subdir pointer
+       JMP  GD46              try again
+*  comes here if idiot typed illegal pathname
+GD47   BL   @CLRCOM
+       BL   @OTHERR
+       DATA PTHBAD            ERROR: Bad pathname.
+       BL   @CONAB1
+       JMP  GDTOP1            retry
+*  comes here if we found the pathname
+*  first, maintain the bloody stack
+GD48   MOV  R7,@TOPSL         top line on screen
+       MOV  R7,@SUBLIM        sub limit
+       MOV  *R3,*R7+          au # of this directory entry
+       MOV  @DIRAUX,R0
+       MOV  *R3,*R0           set new directory au number
+       MOV  @LEVEL,*R7+       level #
+       MOV  @LEVEL,@BASELV    base level
+       INC  @LEVEL            next level
+       MOV  R7,R1
+       LI   R0,VCOM+10        addr of pathname
+       BL   @MOVE1            move bytes
+       DATA 10
+       MOV  R1,R7             fix pointer
+       MOV  @X1LOAD,R0
+       BL   *R0
+       MOVB @>17(R3),R1
+       SRL  R1,8              # subdirectories
+       MOV  R1,*R7+
+       MOVB @>16(R3),R1
+       SRL  R1,8              # files
+       MOV  R1,*R7+
+       MOV  @TEMP+>14,*R7+    date of creation
+       MOVB *R6,R0            get next byte in full pathname
+       JNE  GD44              not at end
+       MOV  R7,@CURSUB
+       B    @GD06A            show header and go
+*
+* <B>ack a level
+*
+GD49   MOV  @LEVEL,R0         get level
+       DEC  R0
+GD50   MOV  @STRSUB,R7        get start of subdir stack
+       DEC  R0                back up
+       JLT  GDTOP1
+GD51   C    @2(R7),R0         this the one?
+       JEQ  GD52              yes
+       AI   R7,SUBLEN
+       JMP  GD51              keep searching
+GD52   C    @SUBLEN(R7),@HFFFF        is this the last entry?
+       JEQ  GD50              yes - back up a level
+       B    @GD30A            enter the sucker
+*
+* build entry for volume name
+GD60   MOV  R11,R4            save
+       MOV  @CURSUB,R1        get address in sub stack
+       CLR  *R1+              au number
+       SETO *R1+              level is minus one
+       MOV  R3,R0             get address of volume sector
+       BL   @MOVE1
+       DATA 10
+       MOV  @HRDX,R0          hard or floppy?
+       ABS  *R0
+       JNE  GD63              hard
+*  floppy. <sigh>
+       MOV  R1,R7
+*    get # subdirs
+       MOV  R3,R0
+       AI   R0,30             point to 1st subdir sector pointer
+       LI   R1,3              max is 3
+       CLR  *R7               count
+GD61   MOV  *R0,R2            get pointer
+       JEQ  GD62              null - no more
+       INC  *R7
+       AI   R0,12
+       DEC  R1
+       JNE  GD61
+GD62   INCT R7
+*    get # files
+       MOV  R3,R0
+       AI   R0,>0100          point to sector one buffer
+       CLR  *R7
+       MOV  *R0+,R2           get sector number
+       JEQ  $+6
+       INC  *R7
+       JMP  $-6
+       INCT R7
+       CLR  *R7+              date of creation = 00/00/00
+       MOV  R7,@CURSUB
+       B    *R4               return
+GD63   MOVB @>17(R3),R0       number of subdirectories
+       SRL  R0,8              to lsby
+       MOV  R0,*R1+           store
+       MOVB @>16(R3),R0       number of files
+       SRL  R0,8              to lsby
+       MOV  R0,*R1+
+       MOV  @>14(R3),*R1+     date of creation
+       MOV  R1,@CURSUB
+       B    *R4               return
+*
+GDTOP1 MOV  @HRDX,R0
+       MOV  @DIRAUX,R1
+       CLR  *R1
+       ABS  *R0
+       JNE  $+4               hard
+       INC  *R1               point to sector 1
+       B    @GDTOP            go to top level
+*
+GDNC   CLR  R1
+       DIV  @H000A,R1         divide
+       AI   R1,>30
+       AI   R2,>30
+       SWPB R1
+       SWPB R2
+       MOVB R1,*R3+
+       MOVB R2,*R3+
+       RT
+*
+* CHANGE CONTINUE OPERATION SO IT WILL 1ST DO A DIRECTORY THEN A CONTINUE
+*
+GDCON  C    @GDSVR7,@SUBLIM   AT TOP LEVEL NOW
+       JNE  $+6               NO
+       B    @GDRT             GO CONTINUE
+       SETO @CONTFG           SET CONTINUE FLAG
+       B    @GD30             DO DIRECTORY
+*

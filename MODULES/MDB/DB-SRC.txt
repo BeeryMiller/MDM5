@@ -1,0 +1,11 @@
+       COPY "DB-EQU"
+       COPY "DB-MAIN"
+       COPY "DB-BACKUP"
+       COPY "DB-DISKS"
+       COPY "DB-SUBS"
+       COPY "DB-PRINT"
+       COPY "DB-NOISE"
+       COPY "DB-SUPPORT"
+       COPY "DB-DATA"
+       COPY "DB-RELOAD"
+       END

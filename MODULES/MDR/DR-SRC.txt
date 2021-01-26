@@ -1,0 +1,10 @@
+       COPY "DR-EQU"
+       COPY "DR-MAIN"
+       COPY "DR-RESTORE"
+       COPY "DR-DISKS"
+       COPY "DR-SUBS"
+       COPY "DR-NOISE"
+       COPY "DR-SUPPORT"
+       COPY "DR-DATA"
+       COPY "DR-RELOAD"
+       END

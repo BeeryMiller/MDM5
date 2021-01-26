@@ -1,0 +1,150 @@
+**** MODULE NAME - CONVERT ****
+***
+*
+* THIS SUBROUTINE CONVERTS UP TO A MAX OF 65536 ASCII DECIMAL OR HEX
+* TO BINARY OUTPUT FOR PROGRAM USE.  REGISTER USAGE IS:
+*
+*     R1 - USED TO FIND LENGTH OF NUMBER
+*     R2 - POINTER TO NUMBER
+*     R3 - GENERAL USE
+*     R4 - DESTROYED IN MULTIPLICATION
+*     R5 - SAME AS R4
+*     R6 - SAME AS R4
+*     R7 - SAME AS R4
+*** BASE IS DETERMINED BY PRESENCE OF > FOR HEX ******
+*
+* FIRST SECTION CONVERTS TO BCD
+*
+ASCBIN DATA HIREG2,ASCBI2
+ASCBI2 MOV  *R14+,R4     *GET POINTER TO STRING
+       MOVB *R4+,R5      *STRING LENGTH
+       SRL  R5,8         *LENGTH IN R5
+       MOV  R5,R6
+       LI   R2,LEN$
+       MOV  R2,R7
+ASCBLP MOVB *R4+,*R7+
+       DEC  R6
+       JNE  ASCBLP
+       LI   R3,10        *DECIMAL BASE
+       CB   *R2,@H3E     *LOOK FOR HEX MARKER
+       JNE  MAKBCD       *NOT THERE, MUST BE DECIMAL
+       LI   R3,16        *LOAD HEX BASE
+       DEC  R5           *ONE LESS CHARACTER TO CONVERT
+       INC  R2           *MOVE POINTER PAST HEX MARKER
+MAKBCD MOV  R5,R6
+NXTNUM DEC  R5
+       JNC  ALLBCD
+       CB   *R2,@H39
+       JLE  DECCOD
+       CI   R3,10
+       JEQ  ERRHK
+       CB   *R2,@H41
+       JL   ERRHK
+       CB   *R2,@H46
+       JH   ERRHK
+       SB   @H37,*R2+
+       JMP  NXTNUM
+DECCOD CB   *R2,@H30
+       JL   ERRHK
+       SB   @H30,*R2+
+       JMP  NXTNUM
+ALLBCD MOV  R3,R5        *SAVE COPY OF BASE
+       MOV  R2,R0        *SAVE POINTER TO NEXT CHARACTER IN COM$
+       DEC  R0           *USE COPY TO COUNT BACK DOWN
+       MOVB *R0,R1       *GET ONE'S COLUMN
+       SRL  R1,8         *MAKE IT A WORD
+       MOV  R1,*R13      *PUT IT IN ACCUMULATOR
+NXTPOW DEC  R6           *START COUNTDOWN
+       JEQ  BINARY
+       DEC  R0           *GET NEXT POWER
+       MOVB *R0,R1
+       SRL  R1,8         *MAKE IT A WORD
+       MPY  R5,R1        *MULTIPLY POWER TIMES BCD VALUE
+       A    R2,*R13      *ADD IT TO ACCUMULATOR
+       MOV  R5,R4        *PUT POWER IN R4
+       MPY  R3,R4        *MULTIPLY POWER BY BASE TO GET NEXT POWER
+       JMP  NXTPOW       *GET NEXT BCD POWER
+BINARY INCT R14          *NO ERRORS
+       RTWP
+ERRHK  MOV  *R14,R14     *GET ERROR HOOK
+       RTWP              *BRANCH TO ERROR ROUTINE
+***
+*
+*   BINARY TO DECIMAL ASCII CONVERSION ROUTINE
+*   MAXIMUM FIVE CHARACTERS (65536)
+*   LEADING ZEROS SUPPRESSED, RIGHT JUSTIFIED
+*   R0 - BINARY NUMBER
+*   R1 - CPU BUFFER ADDRESS
+*
+***
+BH1    LI   R0,3
+       LI   R4,BASE16
+       JMP  CONBIN
+BD1    LI   R0,4
+       LI   R4,BASE10
+       ABS  @CONV32           doing a 32-bit number
+       JNE  CB32              yup
+CONBIN MOV  R13,R7       *COPY WS POINTER
+       MOV  *R7+,R2      *MOVE BINARY NUMBER
+       MOV  *R7,R10      *MOVE CPU BUFFER ADDRESS
+       CLR  R3           *CLEAR FLAG TO SHOW WHEN FIRST <>0 NUMBER CONVERTED
+BDLOOP CLR  R1           *GET RID OF QUOTIENT
+       DIV  *R4+,R1      *DIVIDE BINARY # IN R2 BY CONVERSION FACTOR
+       SLA  R1,8         *SHOVE QUOTIENT INTO MSB, LEAVE REMAINDER IN R2
+       JNE  NOT0         *IF <>0 THEN JUMP
+       MOV  R3,R3        *OTHERWISE, CHECK TO SEE IF A LEADING ZERO
+       JNE  NOTLED       *IF NOT LEADING ZERO THEN JUMP
+       MOVB @H20,*R10+   *LEADING ZERO, SO SEND SPACE INSTEAD
+       JMP  NXTCON       *CONTINUE TO NEXT POWER
+NOT0   INC  R3           *IT'S <>0, SO INCREMENT FLAG
+NOTLED BL   @GETOFF
+       MOVB R1,*R10+     *BUFFER
+NXTCON DEC  R0           *SEE IF THERE IS ANOTHER POWER TO CONVERT
+       JNE  BDLOOP       *REPEAT IF THERE IS
+       SWPB R2           *ONLY 1'S POWER LEFT IN R2
+       MOV  R2,R1
+       BL   @GETOFF
+       MOVB R1,*R10+     *MOVE TO BUFFER
+       MOV  R10,*R7      *UPDATE R1
+       RTWP              *GO BACK FROM WHENCE YE CAME
+CB32   MOV  R13,R7
+       MOV  *R7+,R2           LSW of 32-bit number
+       MOV  *R7,R10           CPU buffer address
+       MOV  @2(R7),R1         MSW of 32-bit address
+       DIV  *R4+,R1           R1 = first two digits, R2 = last four digits
+       CLR  R3                no digits so far
+       MOV  R2,R0
+       MOV  R1,R2
+       CLR  R1
+       DIV  @H000A,R1
+       SLA  R1,8
+       JNE  CB32A
+       MOVB @H20,*R10+        leading 0, so write space
+       JMP  CB32B
+CB32A  BL   @GETOFF
+       MOVB R1,*R10+          write digit
+       INC  R3                there's a real digit here!
+CB32B  SLA  R2,8
+       JNE  CB32C             not a 0
+       ABS  R3
+       JNE  CB32C             write it out anyway
+       MOVB @H20,*R10+        another space
+       JMP  CB32D
+CB32C  MOVB R2,R1
+       BL   @GETOFF
+       MOVB R1,*R10+          write digit
+       INC  R3
+CB32D  MOV  R0,R2             rest of number
+       LI   R0,3              only three more place #s to convert
+       JMP  BDLOOP            convert rest of number
+*
+GETOFF CB   R1,@H0A
+       JL   DECOFF
+       AI   R1,>3A00
+       B    *R11
+DECOFF AI   R1,>3000
+H3000  EQU  $-2
+H30    EQU  H3000
+       B    *R11
+***
+       EVEN

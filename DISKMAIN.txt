@@ -1,0 +1,1165 @@
+*** MODULE NAME - DISKMAIN ***
+*
+*FIRST PUT UP CATALOG HEADER AND SET HEADER UP FLAG
+*
+CAT    MOV  R11,@SAVRT6
+       BLWP @GETDRV           get the drive number
+       DATA >0000
+CATJR1 NOP
+       ABS  @FFFLG            WAS THE FLOPPY JUST FORMATED?
+       JEQ  $+10              no
+       CLR  @FFFLG            reset format flag
+       B    @LEV0RT           exit
+       BL   @COM4             "loading files, please wait"
+       SETO @CATACC
+       CLR  @EMUFLG
+       ABS  @HRDS
+       JEQ  CATHVO            floppy drive
+*  hard drive, so move volume name out
+       MOV  @STRSUB,R0
+       C    *R0+,*R0+         past misc. garbage
+       BL   @MOVE0
+       DATA VOLUME,10
+       BL   @SHOW$1           show line 2 on screen
+       DATA CATHL2,2*SCRWID+1
+CATHV1 MOV  @EMUFDR,R0        get sector for emulation of dsk1.
+       JEQ  CATHV2            null - no emulation set up
+       LI   R1,TEMP
+       BLWP @RSHRD
+       DATA CATHV1
+       BL   @VMBW             write emulation filename to screen
+       DATA 2*SCRWID+10,TEMP,10
+*  write volume name to screen
+CATHV2 BL   @VMBW
+       DATA 2*SCRWID+29,VOLUME,10
+CATHVO CLR  R0
+       LI   R1,VOLUME
+FNMLEN CB   @H20,*R1+
+       JEQ  FNDEND
+       INC  R0
+       CI   R1,VOLUME+10
+       JL   FNMLEN
+FNDEND MOV  R0,@VOLLEN        Set length of volume name
+       CLR  @NUMFIL      *CLEAR NUMBER OF FILES
+       LI   R7,S1BUFF
+       LI   R1,FCBASE    *BASE CPU ADDRESS FOR FCB'S
+NXTFCB MOV  *R7,R0       *GET A SECTOR #
+       JEQ  MSKFCB       *JUMP IF NO MORE FCB'S
+       MOV  R0,*R1+      *PUT IN SECTOR NUMBER
+       MOVB @H00,*R1+    *CLEAR OPERATION FLAGS
+       MOV  R1,R4        *LENGTH BYTE
+       LI   R1,TEMP           temp buffer
+       ABS  @HRDS             winchester?
+       JEQ  CATF              no.... catalog the floppy
+       BLWP @RSHRD            read a winchester sector
+       DATA FCBERR            ERROR OUT ON BAD FCB
+       MOV  @>26(R1),@>1C(R1) move the stuff we want to where we want it
+       JMP  CATANY
+CATF   BLWP @RSCPU
+       DATA FCBERR            ERROR OUT ON BAD FCB
+       CLR  @>1C(R1)          don't want any funny stuff, now
+CATANY LI   R0,TEMP
+       MOV  R4,R1
+       INC  R1
+       BL   @MOVE1
+       DATA FCBLEN-4          length of block - header
+       MOV  R4,R1
+       INC  R1                point to buffer
+       LI   R5,10
+       CLR  R3           *COUNTER FOR NAME LENGTH
+NAMLP  CB   *R1+,@H20
+       JEQ  NAMEND       *JUMP IF AT END OF NAME
+       INC  R3
+       DEC  R5           *CHECK FOR END OF NAME
+       JNE  NAMLP
+NAMEND SWPB R3           *PUT NAME LENGTH TO MSB
+       MOVB R3,*R4       *MOVE IT TO BEGINNING OF FILE NAME
+       AI   R4,FCBLEN-3  *POINTS TO BEGINNING OF NEXT FCB
+       MOV  R4,R1
+MSKFCB INCT R7
+       CI   R7,S1BUFF+254
+       JL   NXTFCB
+       SETO *R1+         *SIGNAL END OF FCB'S
+       MOV  R1,@CPYBAS        Copy buffer & FCB different now
+       MOV  R1,@FCBEND        Move to this instead
+REDOEP LI   R7,FCBASE    * ON REDO KEY (F8) ENTER HERE
+       MOV  R7,@TOPLIN
+       CLR  @CURLIN
+       BL   @CSHHED
+       BL   @CLRCOM           clear command line
+       BL   @SHOW$1           new command line
+       DATA CATLT,22*SCRWID+10
+       BL   @COMNB
+       DATA CATLL
+       JMP  $-6
+CATJR  BLWP @GETDRV
+       DATA >0300             get subdirectory only
+       B    @CATJR1
+*
+FCBERR BL   @CLRCOM           CLEAR COMMAND AREA
+       BL   @OTHERR
+       DATA SE6               ERROR
+       BL   @CONAB1           ASK CONTINUE/EXIT
+       JMP  FCBERR            NOTHING TO CONTINUE
+*
+***
+*
+*  BL  @SHOFIL - SHOWS A PAGE FULL OF DISK CATALOG STARTING WITH THE FCB POINTED
+*  TO BY R7 AND CONTINUING UNTIL EITHER ALL OF THE FILES ARE DISPLAYED OR THE
+*  PAGE IS FULL.  ALSO, IT WILL INVERT THE LINE INDICATED BY R6 AS BEING THE
+*  CURRENT LINE.
+*
+*  R6 - CURRENT LINE NUMBER (BASE 0)
+*  R7 - POINTS TO BASE OF TOP FILE ON PAGE.
+*
+***
+SHOFIL MOV  @TOPLIN,R7
+       MOV  @CURLIN,R6
+       CLR  R2
+SHOW1  MOV  R11,@SAVRT
+       MOV  R7,R5        *TOP FILE
+       MOV  R7,R4
+       LI   R15,>2020
+SHOLP  C    *R4,@HFFFF   *TEST FOR LAST FILE
+       JNE  NOTND5
+       AI   R4,-FCBLEN
+       CLR  R13
+       CI   R6,>FFFF
+       JNE  $+6
+       B    @CLRPAG
+       LI   R0,VCOM
+SHOLP2 MOV  R15,*R0+
+       CI   R0,VCOM+38
+       JL   SHOLP2
+       SETO R6
+       B    @CLRPAG
+NOTND5 LI   R1,VCOM
+       INCT R5           *OVER SECTOR #
+       MOVB *R5+,R13     *GET FLAG BYTE
+       JEQ  NONSET
+       LI   R3,FLAGS
+*      CB   R13,*R3
+*      JEQ  FLGFND
+*      INC  R3
+CKFLAG SLA  R13,1
+       JOC  FLGFND
+       INC  R3
+       CI   R3,FLAGS+4
+       JL   CKFLAG
+NONSET MOVB R15,*R1+
+       JMP  SOMSET
+FLGFND MOVB *R3,*R1+
+SOMSET MOVB R15,*R1+
+       INC  R5           *OVER NAME LENGTH
+       MOV  R5,R0
+       BL   @MOVNAM
+       MOVB R15,*R1+
+       C    *R4,@EMUFDR       emulating dsk1.?
+       JNE  $+8               no - mark with space
+       MOVB @HI31,*R1+
+       JMP  $+4
+       MOVB R15,*R1+
+       MOV  R0,R5
+       MOV  @SECALL(R4),R0
+       MOV  R2,@MSSEC         temp storage place... can't think of
+*                                     anywhere better...
+       CLR  R2
+       INC  R2           *ADD FDR SECTOR
+       ABS  @HRDS             winchester?
+       JNE  CATH80            yes
+*SEE IF MORE THAN 1600 SECS
+       C    @VOLUME+TOTSEC,@H0C80
+       JH   FL36A
+       C    @VOLUME+TOTSEC,@H0640
+       JLE  NO80SZ
+       INC  R0
+       CLR  R2
+       ANDI R0,>FFFE     *MASK OFF BIT 0
+       INCT R0           *COMPENSATE FOR 80 TK WASTED SECS.
+       JMP  NO80SZ
+FL36A  CLR  R2
+       AI   R0,3
+       ANDI R0,>FFFC
+       C    *R0+,*R0+
+       JMP  NO80SZ
+CATH80 MOV  @SECAUX,R2        get pointer to sec/au word
+       MOV  *R2,R2            add
+NO80SZ A    R2,R0
+       JNC  CATH81
+       LI   R2,>1000
+       JMP  CATH82
+CATH81 CLR  R2
+CATH82 A    @>20(R4),R2       get msb of file size
+       SRL  R2,12             shift to low nibble
+       MOVB R15,*R1+          space
+       SETO @CONV32           32 bit numbers approaching. . . .
+       BLWP @BINDEC      *FILE SIZE
+       INCT R5           *TO FLAG BYTE
+       MOVB R15,*R1+
+       LI   R3,TYPES
+       MOVB *R5,R14
+       LI   R13,7             length of file type text
+       COC  @H2000,R14        dsk1. emulation set?
+       JEQ  PRGMLP            yes
+       A    R13,R3
+       SRL  R14,9
+       JOC  PRGMLP
+       A    R13,R3
+       SRL  R14,1
+       JOC  INTERN
+       AI   R3,14
+INTERN SRC  R14,6
+       JOC  PRGMLP
+       A    R13,R3
+PRGMLP MOVB *R3+,*R1+
+       DEC  R13          *LEAVES WITH R13 CLEARED
+       JNE  PRGMLP
+       MOVB R15,*R1+
+       MOVB *R5,R14
+       COC  @H2000,R14        dsk1. emulation?
+       JNE  SHOREC            no - show the record size
+       LI   R14,6             five spaces
+       MOVB R15,*R1+
+       DEC  R14
+       JNE  $-4
+       JMP  REC1
+SHOREC MOVB @RECLEN(R4),R0
+       CLR  R2                clear msby of record size
+       SRL  R0,8
+       JNE  REC
+*   record length = 0.... must be a program file
+       MOV  @SECALL(R4),R0
+       SRL  R2,12             shift to low nybble
+       MOVB @OFFSET(R4),R3
+       JEQ  NOTZER            if 0, then full (all 256 used)
+       DEC  R0           *DON'T COUNT LAST SECTOR - ONLY PARTIALLY FULL
+NOTZER MOVB R0,R2
+       SRL  R2,8
+       SLA  R0,8         *MULTIPLY BY 256
+       SRL  R3,8
+       A    R3,R0
+REC    BLWP @BINDEC
+REC1   MOV  @MSSEC,R2         restore r2
+       CLR  @CONV32           back to good ol' 16-bit numbers
+       MOVB R15,*R1+          space
+       MOVB *R5+,R14          get file status
+       ANDI R14,>0800         protected?
+       JEQ  NOPROT            no
+       MOVB @HI50,*R1          indicate so
+       JMP  CLRPAG
+NOPROT MOVB @H20,*R1  *CHANGE TO 'U' IF YOU WANT U FOR UNPROTECT
+CLRPAG MOV  R2,R0     *LINE COUNTER
+       BL   @FINDLN           find vdp location of line
+       BL   @WRITEV           set vdp write address
+       C    R2,R6             is this the current line?
+       JNE  NOINV             no - don't invert
+H02    EQU  $
+       LI   R13,>8080 *DON'T CHANGE UNLESS H02 IS RELOCATED
+NOINV  LI   R1,VCOM           buffer location
+********* ADDED TO TEST IF AT THE EMULATE OR PROTECT POSITIONS
+********* SO THAT THEY DON'T GET INVERT TURNED OFF
+*
+       CI   R1,VCOM+13        AT EMULATE POSITION
+       JNE  $+8               NO TRY PROTECT POSITION
+       CB   *R1,@HI31         GOT A INVERT >31
+       JEQ  DISLIN+2          YES DON'T RE-INVERT IT
+       CI   R1,VCOM+37        AT PROTECT COLUMN
+       JNE  DISLIN            NO
+       CB   *R1,@HI50          GOT AN INVERSE 'P'
+       JEQ  DISLIN+2          YES DON'T RE-INVERT IT
+DISLIN AB   R13,*R1           add invert offset, if there is one
+       MOVB *R1+,*R8
+H31    EQU  $-1       *DON'T CHANGE UNLESS H31 IS RELOCATED
+       CI   R1,VCOM+38        end of line?
+       JL   NOINV+4           no
+       INC  R2                next line on screen
+       CI   R2,16             screen full?
+       JHE  PAGFUL            yes
+       AI   R4,FCBLEN         next
+       MOV  R4,R5    *DON'T CHANGE UNLESS H44 IS RELOCATED
+H44    EQU  $-1
+       B    @SHOLP            show some more
+PAGFUL MOV  @SAVRT,R11
+       B    *R11
+***
+*   BL  @FINDLN - FINDS VDP ADDRESS OF FILE NAME FOR THE LINE NUMBER
+* IN R0 (BASE 0)
+* RETURNS VDP ADDRESS IN R1
+***
+*
+FINDLN MPY  @H0028,R0    *R1 HAS BEGINNING OF LINE
+       AI   R1,5*SCRWID+01    OFFSET FOR HEADER LINES AND MARGIN
+       B    *R11
+*
+*** Print catalog
+PCAT   MOV  R11,@SAVRT6
+       LI   R15,PCATRT
+       BL   @VDPFIL
+       DATA PRTBUF,80,>2020
+       CLR  @TOTERR           USE THIS TO COUNT LINES
+       MOVB @H05,@TOTERR+1    SET PRINT LINE # TO 5 FOR HEADER
+       BL   @OPEN
+       DATA PRTPAB
+       BL   @SHOHED
+       DATA PRTBUF+1,VOLUME
+       BL   @PRINTV
+       DATA PRTBUF,40
+       BL   @PRINT
+       DATA HEADR2
+       BL   @PRINT
+       DATA SPLINE
+       BL   @PRINT
+       DATA PCL1
+       BL   @PRINT
+       DATA PCL2
+       LI   R7,FCBASE
+PFILLP C    *R7,@HFFFF
+       JEQ  PCATRT
+       CLR  R6
+       LI   R2,PRTBUF+1->C9/SCRWID   "line number" to print to vdp >0501
+       MOV  R7,@SAVR2         save this
+       BL   @SHOW1            "show" file
+       MOVB @H20,*R8
+* print time/date stamp
+       MOV  @SAVR2,R7         I need this
+       AI   R7,20+4           Point to time/date stamp
+       MOVB @H20,*R8
+       LI   R2,2              Do this twice
+PCDT   BL   @PCAT1            GO DO CONVERT
+       INCT R7
+       DEC  R2                Do again?
+       JNE  PCDT              Yes <groan>
+       LI   R1,PRTBUF+1       NOW REMOVE ANY INVERSE '1 OR P'
+       LI   R2,78             78 POSITIONS
+I1POUT BL   @VSBR             GET A CHAR
+       ANDI R0,>7F00          NO HI BIT
+       BL   @VSBW
+       INC  R1
+       DEC  R2                ALL DONE
+       JNE  I1POUT
+       LI   R0,>200C          PUT EITHER A SPACE OR FF AT EOL
+       INC  @TOTERR           INC PRINT LINE #
+       MOV  @TOTERR,R2
+       CI   R2,58             AT MAX PRINT LINE
+       JNE  $+8               NO SPACE AT EOL
+       SWPB R0                YES DO FF
+       CLR  @TOTERR
+       BL   @VSBW             WRITE OUT EOL CHARACTER
+       BL   @PRINTV
+       DATA PRTBUF+1,79
+       MOV  @SAVR2,R7         Restore R7
+       AI   R7,FCBLEN         Next file
+       JMP  PFILLP
+PCATRT BL   @CLOSE
+       DATA PRTPAB
+       MOV  @SAVRT6,R11
+       B    *R11
+* convert R1 to two digit decimal number with leading 0s... print to VDP
+PCATX  CLR  R0
+       DIV  @H000A,R0         /10
+       SWPB R0                To MSBy
+       AI   R0,>3000          To ASCII
+       MOVB R0,*R8            Write to VDP
+       SWPB R1                To MSBy
+       AI   R1,>3000          To ASCII
+       MOVB R1,*R8            Write to VDP
+       RT                     Return
+H2F    BYTE >2F
+H3A    BYTE >3A
+*
+*   set up pathname for winchester
+PATHMN EQU  $
+PATHCP DATA GETDWS,PATH1
+PATH1  MOV  @HRDX,R0
+       ABS  *R0               Winchester or floppy?
+       JEQ  PATH3             Floppy.... don't do anything
+       BL   @MOVE             move bytes
+       DATA WDSTXT,VCOM+11,3  three bytes
+       MOVB @DRVNUM+1,*R1     get drive number in line
+       AB   @H30,*R1+         convert to ascii
+       MOVB @DECMAL,*R1+      period
+       MOV  @PATHX,R0         get address of pathname
+       LI   R3,>0500          'WDSx.' length
+       MOVB *R0+,R2           get length
+       JEQ  PATH2             null string
+       AB   R2,R3             add to length
+       SRL  R2,8              to lsby
+       BL   @MOVER            move bytes
+PATH2  LI   R0,VCOM+10
+       MOVB R3,*R0            set length
+       MOV  R0,@>834E         address of pathname
+       BLWP @DSRSUB
+       DATA >A7               Set directory
+PATH3  RTWP                   Return
+*
+***
+*
+*   BL  @V1LOAD - LOADS VOLUME IN VOLUME BUFFER AND SECTOR 1
+*   IN S1BUFF AND PUTS VOLUME NAME IN ORIVOL ALONG WITH VOLUME NAME
+*   LENGTH IN VOLLEN+1
+***
+***
+*
+C1LOAD LI   R2,CBUFFS
+       LI   R0,SETD
+       MOVB @COPYDR,@CURDN
+       JMP  LOADV1
+V1LOAD LI   R2,MBUFFS    *READ SECTOR 0
+       LI   R0,SETS
+       CLR  @CATACC
+       CLR  @VOLFLG           volume name unchanged
+       MOVB @MAINDR,@CURDN
+LOADV1 MOV  R11,R3            save return address
+       BL   *R0               set for source or destination drive
+       MOV  R3,R11            restore return address
+       MOV  @HRDX,R0          address of floppy/hard flag
+*      BLWP @CKF4
+*      DATA LEV1RT
+       MOV  R2,R3
+       MOV  *R2+,R1
+       ABS  *R0               hard or floppy?
+       JNE  H1LOAD            hard.....
+       CLR  @FFFLG            CLEAR FLOPPY FORMAT FLAG
+       CLR  R0
+       BLWP @RSCPU
+       DATA VLERR        *ERROR LINK
+       MOV  @DIRAUX,R0
+       MOV  *R0,R0            get file pointer block sector number
+       MOV  *R2,R1       *SECTOR 1 BUFFER
+       BLWP @RSCPU       *READ IT AND
+       DATA VLERR
+       LI   R0,1              one sector per AU on a floppy
+       MOV  @SECAUX,R1        (except on an 80 track disk, but other
+       MOV  R0,*R1              parts of the dm handle those type disks)
+*CHECK FOR AN 80 TK DISK
+       MOV  *R3,R3
+       CB   @TRKSID(R3),@H50
+       JNE  VOL40
+* Can no longer test for 80 track drive since the HFDC uses a
+* different setup for 80 track drives
+*IT IS AN 80 TK DISK, SO SEE IF IT'S IN AN 80 TK DRIVE
+       BLWP @DRIV80
+       JEQ  VOL40
+*AN 80 TK DISK IS IN A 40 TK DRIVE, SO DISPLAY ERROR MESSAGE AND ABORT
+       ABS  @FOROPR           ERROR OCCUR WHILE DOING A FORMAT SETUP?
+       JEQ  $+4               NO
+VOL40  B    *R11              YES DON'T CONSIDER THIS AN ERROR
+*
+       BL   @CLMID            clear middle of screen
+       BL   @OTHERR
+       DATA DV40TX
+       CI   R14,TDF1          GET HERE FROM SYSTEM TESTS?
+       JNE  $+6               NO
+       B    @TDF2             YES, USE ITS FORMAT ROUTINE
+* CHANGED TO ALLOW USER TO REFORMAT THE DISK WHICH IS INCORRECT
+*
+       BL   @SHOW$1
+       DATA FORMQ,22*SCRWID+13  DO YOU WANT TO FORMAT?
+       BL   @COMNB
+       DATA FQLST1
+VOLCHG BL   @LINE1
+       CI   R14,CATJR1        GET HERE FROM CATALOG FLOPPY?
+       JEQ  $+6               YES
+       B    @RFCY             GO DO OUTPUT REFORMAT
+*
+*      LI   R0,VOLUME
+*      MOV  R0,@CPUBUF        PUT NEW SECTOR 0 INTO VOLUME
+*      CLR  @SECTOR           GET SECTOR ZERO
+*      LI   R0,S1BUFF         CLEAR OUT S1 BUFFER
+* VOLCLR CLR  *R0+
+*      CI   R0,S1BUFF+256       REMOVE ANY ENTRIES WHICH MAY BE THERE NOW
+*      JNE  VOLCLR
+*      B    @FDISK
+       MOV  @DRVNUM,R3
+       BL   @CLTOP
+       BL   @FORMAT
+       B    @LEV0RT
+VLERR  JNE  DNFRT2
+       BL   @COM13
+DNFRT2 B    *R15
+* load from hard disk.....
+H1LOAD MOV  @DIRAUX,R0        pointer to directory au #
+       MOV  *R0,R0            actual number
+       BLWP @RSHRD
+       DATA VLERR        *ERROR LINK
+       ABS  R0                root directory?
+       JNE  H1LOAB            no... don't get new parameters
+       MOV  @>1A(R1),@EMUFDR  fdr number for dsk1. emulation
+       MOV  @>10(R1),R0       first nibble is sectors / au
+       SRL  R0,12
+       INC  R0                lou uses minus one for everything
+       MOV  @SECAUX,R1
+       MOV  R0,*R1
+H1LOAB MOV  *R3,R3            address of volume sector
+       MOV  @>18(R3),R0       au # of file pointers
+* don't kill R3 - on exit, it _must_ point to volume sector
+       MOV  *R2,R1       *SECTOR 1 BUFFER
+       MOV  R0,@NQFLAG        SAVE SECTOR # OF LAST READ
+       BLWP @RSHRD       *READ IT AND
+       DATA VLERR
+       CLR  @>FE(R1)          null out last file pointer
+       RT                     and return!
+***
+*
+*  BL  @SHOHED - SHOWS CATALOG AND EDIT HEADERS ALONG WITH
+*   DISK VOLUME INFORMATION.
+*
+***
+*
+SHOHED LI   R7,>0001
+       A    *R11+,R7          screen address
+       MOV  *R11+,R3          address of volume sector
+       MOV  R7,@HEADRA        save screen address
+       AI   R7,>0026          next line
+       MOV  R7,@HEADRA+2      save that
+       MOV  R11,@SAVRT        save return address
+       CI   R3,CPYVOL  *THIS IS SLOPPY BUT WILL DO FOR NOW
+       JNE  GETMND
+       MOVB @COPYDR,@HEADRT+4 copy disk drive number
+       JMP  DOHEDR
+GETMND MOVB @MAINDR,@HEADRT+4 main disk drive number
+DOHEDR MOV  @HRDX,R0
+       ABS  *R0               floppy or winchester?
+       JEQ  DOFHDR            floppy....
+       BL   @MOVE
+       DATA HEADRT,VCOM,40
+       BL   @MOVE
+       DATA WDSTXT,VCOM+1,3   'WDS' text
+       BL   @FILL
+       DATA VCOM+6,34,>2000   fill with spaces
+       LI   R1,VCOM+6         place for pathname
+       MOV  @PATHX,R0         address of pathname
+       MOVB *R0+,R2           get length of pathname
+       JEQ  SNGLD2            root directory - no pathname
+       SRL  R2,8              to LSBy
+       BL   @MOVER            move some bytes
+       JMP  SNGLD2            dat is it
+DOFHDR BL   @MOVE
+       DATA DSKTXT,HEADRT+1,3 'DSK' text
+       BL   @FILL
+       DATA HEADRT+6,11,>2000 fill with spaces
+       LI   R1,HEADRT+21
+       MOV  R3,R0
+       BL   @MOVNAM           move volume name
+       MOV  @PATHX,R0         get pathname address
+       MOVB *R0+,R2           get length
+       JEQ  DOFH1             root directory - don't sweat it
+       SRL  R2,8              length to lsby
+       LI   R1,HEADRT+6
+       BL   @MOVER            move bytes
+*      MOVB @DECMAL,*R1       write period
+DOFH1  MOVB @12(R3),R0        get sectors per track
+       SRL  R0,8
+       LI   R1,LEN$
+       BLWP @BINDEC
+       LI   R0,FORM
+       LI   R1,LEN$+3
+       CB   *R1,@H20          space?
+       JNE  $+10
+       MOVB @1(R1),*R0+
+       MOVB *R1,*R0+
+       JMP  $+6
+       MOVB *R1+,*R0+
+       MOVB *R1+,*R0+
+       LI   R1,SIDE
+       CB   @H02,@SIDES(R3)   double sided?
+       JEQ  DUBLS             yes
+       MOVB @H53,*R1+         'S'
+       JMP  SNGLS
+DUBLS  MOVB @H44,*R1+         'D'
+SNGLS  INC  R1                over 'S' for sides
+       CB   @H02,@DENSE(R3)   double density?
+       JEQ  DUBLD             yes
+       MOVB @H53,*R1          'S'
+       JMP  SNGLD
+DUBLD  MOVB @H44,*R1          'D'
+* comes here when done with first line of floppy header
+SNGLD  BL   @MOVE
+       DATA HEADRT,VCOM,40    move to screen buffer location
+* comes here when done with first line of winchester header
+SNGLD2 MOV  R3,R1             location of volume sector
+       AI   R1,>0100          point to file pointer list
+       CLR  @NUMFIL
+       LI   R2,127            maximum number of files
+NUMLP3 MOV  *R1+,R0
+       JEQ  NUMLP2
+       INC  @NUMFIL
+NUMLP2 DEC  R2
+       JNE  NUMLP3
+       MOV  @NUMFIL,R0
+       LI   R1,FILE
+       BLWP @BINDEC
+       SETO @CONV32           32 bit numbers coming up
+       LI   R1,BITMAP
+       A    R3,R1
+       ABS  @HEADUP           header already up?
+       JEQ  SNGLD4            no... calculate number of free sectors
+       MOV  @FREEAU,R4        Restore
+       MOV  @SECAUX,R0
+       MPY  *R0,R4
+       MOV  R5,R0
+       MOV  R4,R2
+       JMP  SNGLD5
+SNGLD4 BL   @GETFRE
+SNGLD5 LI   R1,FREE
+       BLWP @BINDEC
+       MOV  R0,R5
+       MOV  R2,R4
+       MOV  @SECAUX,R0        sectors / au for this disk
+       DIV  *R0,R4            R4 = number of AUs free
+       MOV  @TOTSEC(R3),R5
+       MOV  @HRDX,R1
+       S    R4,R5             R5 = number of AUs used
+       MOV  R5,R4
+       MPY  *R0,R4            R4, R5 = total sectors used
+       MOV  R5,R0
+       MOV  R4,R2
+       LI   R1,USED
+       BLWP @BINDEC
+       CLR  @CONV32           16 bit numbers from here on
+       BL   @MOVE
+       DATA HEADR2,VCOM+40,41
+       BL   @SCRGEN
+       DATA VCOM,HEADRA,2
+       MOV  @SAVRT,R11
+       SETO @HEADUP
+       B    *R11
+*
+MOVNAM LI   R12,10
+MOVOL  CB   *R0,@H20
+       JHE  FLTROK
+       CB   *R0,@H7F
+       JLE  FLTROK
+       MOVB @H20,*R0
+FLTROK MOVB *R0+,*R1+
+       DEC  R12
+       JNE  MOVOL
+       B    *R11
+***
+*
+*  BL  @GETFRE - FINDS HOW MANY SECTORS ARE FREE IN A BITMAP
+*    R1 - POINTS TO START OF BITMAP
+*    R0 - RETURNS NUMBER OF FREE SECTORS
+*    USES R0,R1,R2,R4,R5
+*
+***
+GETFRE MOV  @HRDX,R2
+       ABS  *R2               hard disk?
+       JNE  GETFRH            yup
+       LI   R2,100
+       CLR  R0
+NXTWRD LI   R4,16
+       AI   R0,16
+       MOV  *R1+,R5
+       JEQ  ALFRE2
+NXTBIT SLA  R5,1
+       JNC  USED2
+       DEC  R0
+USED2  DEC  R4
+       JNE  NXTBIT
+ALFRE2 DEC  R2
+       JNE  NXTWRD
+*
+*ADDED 5/86 TO HANDLE 80 TK DISKS CORRECTLY
+*SEE IF MORE THAN 1600 SECTORS
+*1600 SECTORS
+       C    @TOTSEC-256(R1),@H0640
+       JLE  BIT40
+       SLA  R0,1  * MULT BY 2 TO COMPENSATE FOR 2 SECTORS PER BIT IN 80 TK
+       C    @TOTSEC-256(R1),@H0C80
+       JLE  BIT40
+       SLA  R0,1              multiply by two again
+BIT40  CLR  R2                MSWord of free sectors
+       MOV  R0,@FREEAU        Save
+       B    *R11
+*   calculate free sectors on a hard disk - not quite so simple
+GETFRH CLR  @MSSEC            msword of sector number for hard disk reads
+       LI   R0,1              first sector of bitmap
+       MOV  @-46(R1),R4       total # AUs on disk
+       MOV  R8,@FREEAU        save r8
+       MOV  R4,R8             # aus
+       INC  R8                lou decs everything
+       SRL  R8,11             / 8 sec/byte / 256 byte/sector
+       JNC  GFH1              no carry
+       INC  R8                one more sector
+GFH1   LI   R1,TEMP           temporary buffer
+       BLWP @RSHRDX
+       DATA GFH1              retry address
+GFH2   LI   R2,16             8 bits in a byte
+       MOV  *R1+,R5           get byte in bitmap
+GFH3   SLA  R5,1
+       JNC  GFH4              free... don't change anything
+       DEC  R4                -1
+GFH4   DEC  R2                any more bits in this byte?
+       JNE  GFH3              yes
+       CI   R1,TEMP+256       at end of buffer
+       JNE  GFH2              still some more on this sector
+       INC  R0                next sector
+       DEC  R8                anymore sectors to read?
+       JNE  GFH1              read another sector
+       MOV  @FREEAU,R8        restore r8
+*      INC  R4                lou does everything minus 1, so correct
+* CORRECT ERROR OF NOT COUNTING SECTOR 0 AND CHANGE FOR BASE 1 OF TOTAL SECTORS
+       MOV  R4,@FREEAU        Save
+       MOV  @SECAUX,R0
+       MPY  *R0,R4
+       MOV  R5,R0
+       MOV  R4,R2
+       RT
+*
+* set SECAUX and HRDX for source or destination drives
+SETS   LI   R0,SECAUS
+       MOV  R0,@SECAUX
+       LI   R0,HRDS
+       MOV  R0,@HRDX
+       LI   R0,PATHS
+       MOV  R0,@PATHX
+       LI   R0,DIRAUS
+       MOV  R0,@DIRAUX
+       MOV  @MAIND,@DRVNUM
+       RT
+SETD   LI   R0,SECAUD
+       MOV  R0,@SECAUX
+       LI   R0,HRDD
+       MOV  R0,@HRDX
+       LI   R0,PATHD
+       MOV  R0,@PATHX
+       LI   R0,DIRAUD
+       MOV  R0,@DIRAUX
+       MOV  @COPYD,@DRVNUM
+       RT
+*
+MORPAG MOV  R7,R4
+       MOV  R0,R2
+       MPY  @FCBLD,R2
+       A    R3,R4
+       C    *R4,@HFFFF
+       B    *R11
+***
+PAGE1  MOV  R11,@SAVRT2
+PAGE1A CLR  @CURLIN
+       MOV  @TOPLIN,R7
+       CI   R7,0-16*FCBLEN    WILL ADD WRAP TO ROM
+       JGT  NOWAY             YES, WO WAY DOWN
+       AI   R7,16*FCBLEN
+       MOV  @FCBEND,R5
+       AI   R5,0-2-FCBLEN
+       C    R7,R5
+       JLE  NOTND3
+NOWAY  MOV  @TOPLIN,R7
+       JMP  GOUP
+*
+DOWN1  MOV  R11,@SAVRT2
+DOWN12 MOV  @CURLIN,R0   *CURRENT LINE
+       MOV  @TOPLIN,R7   *TOP LINE ADDR
+       CI   R0,15        *CURSOR AT BOTTOM?
+       JL   MIDPAG       *NO
+       AI   R7,FCBLEN    *YES, SO SEE IF A SCROLL WILL BRING UP >FFFF MARKER
+       C    *R7,@HFFFF
+       JEQ  ATEND2       *YES
+       BL   @MORPAG
+       JEQ  ATEND2            at end of file list
+       JMP  NOTND3
+MIDPAG INC  R0           *TEST NEXT LINE
+       BL   @MORPAG      *24 BYTES/LINE
+       JNE  NOTND2            not at end
+ATEND2 BLWP @HONK        *REPRIMAND
+       JMP  SDRET1
+NOTND2 INC  @CURLIN
+NOTND3 MOV  R7,@TOPLIN
+GOUP   MOV  @NUMFIL,R2
+       JEQ  ATEND2
+SDRET1 BL   @CSHHED
+SDRET  MOV  @SAVRT2,R11
+       B    *R11
+***
+PAGEN1 MOV  R11,@SAVRT2
+       MOV  @TOPLIN,R7
+       AI   R7,-16*FCBLEN
+       CI   R7,FCBASE
+       JHE  NOTND3
+       LI   R7,FCBASE
+       JMP  NOTND3
+***
+UP1    MOV  R11,@SAVRT2
+       MOV  @CURLIN,R0
+       JEQ  ATTOP
+       DEC  @CURLIN
+       JMP  GOUP
+ATTOP  MOV  @TOPLIN,R7
+       CI   R7,FCBASE
+       JEQ  ATEND2
+       AI   R7,-FCBLEN
+       JMP  NOTND3
+***
+EDIT   MOV  @CATACC,R13
+       JNE  SOMFIL
+*      MOV  R11,@SAVRT2
+       BL   @CAT
+*      MOV  @SAVRT2,R11
+       JMP  NOFLS
+SOMFIL CLR  @CURLIN
+       LI   R7,FCBASE
+       MOV  R7,@TOPLIN
+       BL   @CSHHED
+NOFLS  BL   @COM2
+EDITLP BL   @COMNB
+       DATA CLIST3
+       JMP  EDITLP
+***
+FINDFL MOV  @CURLIN,R2
+       MOV  @TOPLIN,R5
+       MPY  @FCBLD,R2
+       A    R3,R5
+       INCT R5           *POINTS TO FLAG BYTE OF CURRENT FCB
+       B    *R11
+***
+NXTFIL JMP  DOWN12
+*
+ERACOM LI   R0,>2000
+COPYF
+DELF
+MOVEF  MOV  R11,@SAVRT2
+       MOV  @NUMFIL,R7
+       JEQ  NALL2
+       CI   R0,>6100
+       JL   UPCASE
+       AI   R0,->2000
+UPCASE MOV  R0,R7
+       BL   @FINDFL
+       CI   R7,>4300
+       JEQ  ISCOPY
+       CI   R7,>2000
+       JEQ  ISCOPY
+       MOVB @FSTAT-2(R5),R3 *NOT ALLOWED IF PROTECTION BIT = 1
+       ANDI R3,>0800
+       JNE  NALLOW
+ISCOPY CLR  R3
+       LI   R2,FLAGS
+FLGLP2 CB   *R2+,R7
+       JEQ  MOVFLG
+       INC  R3
+       JMP  FLGLP2
+MOVFLG SZCB @HEB,*R5     *MASK OUT BITS 0-3(TI)
+       SOCB @FLGNUM(R3),*R5
+       CLR  R5
+COMRT  MOV  @CURLIN,R0
+       MOV  R0,R6
+       BL   @FINDLN           get vdp address in r1
+       A    R5,R1
+       MOV  R7,R0
+       AI   R0,>8000
+       BL   @VSBW
+       CI   R6,15
+       JEQ  GOPAG1
+       JMP  NXTFIL
+NALLOW BLWP @HONK
+       JMP  NXTFIL
+NALL2  BLWP @HONK
+ERET2  B    @SDRET
+GOPAG1 MOV  @TOPLIN,R0
+       AI   R0,16*FCBLEN
+       C    *R0,@HFFFF
+       JEQ  $+6
+       B    @PAGE1A           page down
+       B    @ATEND2
+*
+* 1 - set dsk1. file emulation
+DESET  MOV  R11,@SAVRT2
+       ABS  @HRDS             hard drive?
+       JEQ  ERET2             no - can't emulate a floppy on a floppy!
+       MOV  @NUMFIL,R5
+       JEQ  NALL2             no files!
+       MOV  R0,R7
+       BL   @FINDFL           find file
+       MOVB @FSTAT-2(R5),R7   get file status byte
+       COC  @H2000,R7         emulation file?
+       JNE  ERET2             no - illegal
+       MOV  @-2(R5),@EMUFDR   set emulation
+       SETO @EMUFLG           we changed the file emulation
+       LI   R7,'1'*256
+DESET1 LI   R5,13
+       JMP  COMRT             exit
+* 0 - cancel dsk1. file emulation
+DERSET MOV  R11,@SAVRT2
+       ABS  @HRDS             hard drive?
+       JEQ  ERET2             no - can't emulate a floppy on a floppy!
+       MOV  @NUMFIL,R5
+       JEQ  NALL2             no files!
+       MOV  R0,R7
+       BL   @FINDFL           find file
+       C    @EMUFDR,@-2(R5)   this the file emulating dsk1.?
+       JNE  ERET2             no - don't allow deselection, then
+       CLR  @EMUFDR           cancel emulation
+       SETO @EMUFLG           we changed the file emulation
+       LI   R7,' '*256
+       JMP  DESET1            exit
+*
+VOLF   MOV  R11,@SAVRT2
+       LI   R0,21
+       ABS  @HRDS
+       JEQ  VOLF1             floppy
+       LI   R0,2*SCRWID+29    screen position for winchester
+VOLF1  LI   R1,VOLLEN+1
+       BLWP @INPUT
+       DATA 10,>202E
+       JEQ  ERET2
+       LI   R1,VOLLEN+1
+       LI   R2,NVNAM
+XVLNAM MOVB *R1+,*R2+
+       CI   R1,VOLUME+10
+       JL   XVLNAM
+       SETO @VOLFLG
+       JMP  ERET2
+*
+RENAMF MOV  R11,@SAVRT2
+       MOV  @NUMFIL,R5
+NALL2A JEQ  NALL2
+       BL   @FINDFL
+       MOV  @CURLIN,R0
+       BL   @FINDLN
+       MOV  R1,R0
+       INCT R0
+       MOV  R5,R1
+       INC  R1
+       BLWP @INPUT
+       DATA 10,>202E
+       JEQ  NOCHNG
+CRED2  SOCB @H14,*R5
+NOCHNG MOV  @SAVRT2,R11
+       JMP  BACKEX
+*
+PROTF
+UNPROF MOV  R11,@SAVRT2
+       MOV  @NUMFIL,R5
+       JEQ  NALL2A
+       MOV  R0,R7
+       BL   @FINDFL
+       MOVB @FSTAT-2(R5),R4
+       CI   R0,'U'*256
+       JEQ  UNPRO2
+       MOVB *R5,R3            get flag byte
+       ANDI R3,>6000          move or delete?
+       JEQ  $+6               no
+       B    @NALLOW           yes - illegal
+       ANDI R4,>0800
+       JNE  NNPC
+       SOCB @H08,@FSTAT-2(R5)
+       JMP  PROT2
+UNPRO2 LI   R7,>2000
+       ANDI R4,>0800
+       JEQ  NNPC
+       SZCB @H08,@FSTAT-2(R5)
+PROT2  SOCB @H10,*R5
+NNPC   LI   R5,37             screen offset for 'p' or ' ' flag
+       B    @COMRT
+*
+BACKUP MOV  R11,@SAVRT2
+       MOV  @NUMFIL,R5
+NALL2Z JNE  $+6
+       B    @NALL2
+       LI   R1,FCBASE
+BACKLP C    *R1+,@HFFFF
+       JEQ  BACKRT
+       SZCB @HEB,*R1
+       SOCB @H80,*R1
+       AI   R1,FCBLEN-2
+       JMP  BACKLP
+BACKRT JMP  BACKEX
+*
+CSHHED MOV  R11,@SAVRT3
+       MOV  @HEADUP,R2
+       JNE  HDRUP
+       BL   @CLTOP
+HDRUP  BL   @SHOHED
+       DATA >0000
+       DATA VOLUME
+       BL   @VMBW
+       DATA 03*SCRWID+1,PCL1+1,38            SHOW TEXT FOR FILES HEAD
+       BL   @SCRGEN
+       DATA COLTXT,COLADR,1
+       MOV  @SAVRT3,R11
+BACKEX B    @SHOFIL
+*** See a file
+       LIST
+SEE    MOV  R11,@SAVRT2
+       MOV  @NUMFIL,R1
+       JEQ  SEENOK
+       BL   @FINDFL
+       MOVB @FSTAT-2(R5),R3
+       MOV  R3,R2
+       ANDI R3,>0300
+       JEQ  FILEOK
+SEENOK BLWP @HONK
+       B    @SEERT2
+FILEOK SRL  R2,3
+       ANDI R2,>1000
+       AI   R2,>0400
+       MOVB R2,@SEEREC
+       MOVB @RECLEN-2(R5),@SEELEN
+       MOVB @MAINDR,@SEEDN
+       INC  R5
+       MOVB *R5+,R4
+       AI   R4,>0500
+       LI   R0,SEENL+1        full pathname
+       ABS  @HRDS             hard or floppy drive?
+       JEQ  SEEFL             floppy....
+       MOVB @WDSTXT,*R0+
+       MOVB @WDSTXT+1,*R0+
+       MOVB @WDSTXT+2,*R0+
+       INCT R0                over drive number and period
+SEEFX  LI   R1,PATHS          pathname
+       MOVB *R1+,R3           get length
+       JEQ  SEEXX             no pathname involved
+       AB   R3,R4             length of filename
+       SRL  R3,8
+SEEWIN MOVB *R1+,*R0+         write character of pathname
+       DEC  R3                any more?
+       JNE  SEEWIN
+       JMP  SEEXX
+SEEFL  MOVB @DSKTXT,*R0+
+       MOVB @DSKTXT+1,*R0+
+       MOVB @DSKTXT+2,*R0+
+       INCT R0                point to filename
+       JMP  SEEFX
+SEEXX  MOVB R4,@SEENL
+       LI   R4,SEENAM
+       LI   R3,10
+SEELP4 MOVB *R5+,*R0+
+       DEC  R3
+       JNE  SEELP4
+       MOV  @CURLIN,R0
+       BL   @FINDLN
+       MOV  R1,@LINLOC
+       LI   R1,GENBUF
+       BL   @VMBR
+LINLOC DATA >0000,36
+       BL   @CLSCRN
+       BL   @VMBW
+       DATA >0002,GENBUF,36
+NPSPOL SETO @SEEOP            SET SEE OPERATION FLAG
+       BL   @OPEN
+       DATA SEEPAB
+SEELP2 BL   @READ
+       DATA SEERT
+       LI   R1,GENBUF+1
+       BL   @VMBR
+       DATA PRTBUF,>00FF
+       LI   R1,PABLOC+5
+       BL   @VSBR
+       MOVB R0,@GENBUF
+       SWPB R0
+       MOV  R0,R1
+       JEQ  NOSCRL            null line - don't display
+       DEC  R1
+       CLR  R0
+       DIV  @H0028,R0         get number of lines required for display
+       LI   R3,24*40
+SEELP1 BL   @SCROLL
+       AI   R3,-40
+       DEC  R0
+       JOC  SEELP1
+       MOV  R3,R1
+       BL   @WRITEV
+       LI   R1,GENBUF
+       BL   @SHOW$
+NOSCRL BLWP @KBSCAN
+       JNE  SEELP2
+       CB   R0,@H82           F4 key?
+       JEQ  SEECLO            yes
+KTRAP  BLWP @KBSCAN
+       JNE  KTRAP
+       JOC  KTRAP
+       CB   R0,@H82           F4 key?
+       JEQ  SEECLO            yes
+       JMP  SEELP2
+SEERT  BL   @SCROLL
+       BL   @SCROLL
+       BL   @SCROLL
+       BL   @LINE1            COMMAND LINE
+       MOV  @COMSV2,@DNF2     SAVE CURRENT RETURN
+       BL   @CONAB1           SETUP CONTINUE EXIT
+       MOV  @DNF2,@COMSV2     RESTORE PROPER RETURN
+SEERT3 BL   @LINE1
+       BL   @COM2
+SEERT2 BL   @CLTOP            clear top of screen
+       SETO @HEADUP           do NOT recalc bitmap
+       B    @GOUP
+SEECLO BL   @CLOSE
+       DATA SEEPAB
+       CLR  @SEEOP
+       JMP  SEERT3
+*
+* SCROLL MOV  R11,R12
+*      MOV  @CPYBAS,R1
+*      MOV  R1,@LINE01
+*      BL   @VMBR
+*      DATA >0050,880    READ SCREEN LOC,LENGTH
+*      BL   @VMBW
+*      DATA >0028       WRITE LOC
+* LINE01 DATA >0000,880  FROM MEM,LENGTH
+* MUST DO SCROLL THE HARD WAY DO ROOM IN CPU TO DO IT THE OLD WAY
+SCROLL MOV  R11,R12
+       LI   R1,11        TIMES TO LOOP
+       MOV  R1,@TEMP+250
+       LI   R1,>0028
+       MOV  R1,@LINE02
+       SLA  R1,1
+       MOV  R1,@LINE01
+SCROL1 LI   R1,TEMP      MOVE A LINE FROM SCREEN TO TEMP
+       BL   @VMBR
+LINE01 DATA >0050,80     READ IN 2 LINES
+       BL   @VMBW
+LINE02 DATA >0028
+       DATA TEMP,80
+       MOV  @LINE01,R2
+       AI   R2,80
+       MOV  R2,@LINE01
+       MOV  @LINE02,R2
+       AI   R2,80
+       MOV  R2,@LINE02
+       DEC  @TEMP+250
+       JNE  SCROL1
+       LI   R1,40
+SCRLP1 MOVB @H20,*R8
+       DEC  R1
+       JNE  SCRLP1
+       B    *R12
+       UNL
+*
+* CHANGED TIME DATE ROUTINE SO PRTTREE COULD USE IT
+*
+PCAT1  MOV  R11,@PCRTN+2
+       MOVB @H20,*R8
+       MOV  @2(R7),R6         Get date
+       MOVB @H20,*R8
+       MOV  R6,R1             Get date
+       SRL  R1,5              month
+       ANDI R1,>F             mask out year
+       BL   @PCATX
+       MOVB @H2F,*R8          slash
+       MOV  R6,R1
+       ANDI R1,>1F            mask out year & month
+       BL   @PCATX
+       MOVB @H2F,*R8          Slash
+       MOV  R6,R1
+       SRL  R1,9              Get year
+       BL   @PCATX
+       MOVB @H20,*R8          space
+       MOV  *R7+,R6           Get time
+       MOV  R6,R1
+       SRL  R1,11             hour
+       BL   @PCATX
+       MOVB @H3A,*R8          colon
+       MOV  R6,R1
+       SRL  R1,5              minute
+       ANDI R1,>3F            mask out hour
+       BL   @PCATX
+       MOVB @H3A,*R8          colon
+       MOV  R6,R1             seconds
+       ANDI R1,>1F            mask out hour & minute
+       SLA  R1,1              *2
+       BL   @PCATX
+PCRTN  B    @0
+       EVEN
+*

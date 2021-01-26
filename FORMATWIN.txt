@@ -1,0 +1,182 @@
+*** MODULE NAME - FORMATWIN ***
+*
+       EVEN
+*FWBLWP DATA TEMP+6,FW09       blwp vectors
+*   now, must load the format routine
+*FWPAB  DATA >0500,VCBUF+>80,0,>1800,>000C
+*      TEXT 'DSK1.MDMFV29'
+       EVEN
+FORWIN BL   @CLRCOM           in case error message on bottom of screen
+       STWP R6                GET CURRENT WS
+       MOV  R6,@FORPWS        STORE IT FOR FORMAT TO USE
+       BL   @VMBW
+       DATA VCBUF,FWPAB,22
+       LI   R0,VCBUF+9
+       MOV  R0,@>8356
+       BLWP @PRTLNK           dsrlnk routine
+       DATA >0008
+       JNE  FW06              no errors
+*   mdm-format file not found
+FWO5A  BL   @OTHERR
+       DATA FWTT4
+       BL   @CONAB1           get continue exit
+       JMP  FORWIN            try again on continue
+*   mdm-format file found
+FW06   LI   R1,TEMP           temp buffer
+       BL   @VMBR             read vdp
+       DATA VCBUF+>82,4       length and start address words
+       MOV  @TEMP+2,R1        start address
+       MOV  R1,@FW10+2        load start address
+       MOV  @TEMP,R2          length
+       BL   @VMBR2            vdp address already set, so don't worry about it
+       BLWP @FWBLWP           load temp ws and execute format routine
+       MOV  R0,R0             any error?
+       JEQ  FW11              no . . . . verify hard disk
+       CLR  @IGNFER           do NOT ignore disk-not-formatted errors
+       B    @UTIL             return to utility menu
+*  error occured during format of winchester
+FW07   BL   @CLTOP
+       BL   @SHOW$1           display a string
+       DATA FWTT3,ERLN#*SCRWID+1
+FW08   BLWP @KBSCAN
+       JNE  FW08              nothing pressed
+       JOC  FW08              don't want repeaters
+       CI   R0,>0D00          enter?
+       JNE  FW08              watch my lips - PRESS ENTER
+       B    @LEV0RT           abort out
+*
+FW09   LWPI TEMP              this way, r13-r15 won't get killed
+       MOV  @MAIND,R3         drive number
+       LI   R6,FORPAT         TABLE FOR PATCHING MDM-FORMAT TO USE MAIN ROUTINES
+       MOV  @WDPRES,R12       winchester CRU base
+FW10   BL   @0                execute format routine
+       LWPI TEMP+6            restore r13-r15
+       MOV  @TEMP,*R13        save error code
+       RTWP
+*
+* verify hard disk
+*
+FW07J  JMP  FW07
+FW11   B    @UTIL
+       BL   @V1LOAD           load volume sectors
+       BL   @CLRCOM           clear command line
+       BL   @CLTOP            clear top of screen
+       BL   @SHOHED           show header of hard disk on screen
+       DATA 0,VOLUME
+*  read bitmap into vcbuf
+       LI   R4,1              sector 1
+       LI   R5,VCBUF
+       CLR  @MSSEC
+FW12   MOV  R4,R0
+       LI   R1,TEMP
+       BLWP @RSHRDX
+       DATA FW12
+       MOV  R5,@$+8           set vdp address
+       BL   @VMBW
+       DATA 0,TEMP,256
+       AI   R5,256
+       INC  R4
+       CI   R4,32
+       JNE  FW12
+       BL   @VMBW
+       DATA PABSUB,PAB20,2
+       MOV  @VOLUME+>A,R5     get total AUs
+*      INC  R5                for lou's offset of -1  CHANGED 5/27
+       MPY  @SECAUS,R5        r5 & r6 = number of sectors
+       CLR  R3
+       CLR  R4
+       CLR  R7                bad sector count
+       SETO @CONV32
+       BL   @SHOW$1
+       DATA FWTT6,19*SCRWID+20               Bad sectors: 0
+FW13   MOV  R4,R0
+       MOV  R3,R2
+       LI   R1,FWVNUM
+       BLWP @BINDEC
+       BL   @SHOW$1
+       DATA FWTT5,19*SCRWID+1
+       LI   R0,TEMP
+       MOV  R0,@>834E         buffer address
+       MOV  R3,@>8352         msw of sector
+       MOV  R4,@>8350         lsw of sector
+       SETO R0                read flag
+       MOVB @DRVNUM+1,R0
+       ORI  R0,>8000          set cpu flag
+       MOV  R0,@>834C
+       MOV  @PAB10L,@>8356
+       BLWP @PRTLNK
+       DATA >A                subroutine
+       MOVB @>8350,R0         get error code
+       JEQ  FW14              no error
+*  bad sector. see if 0 <= sector < 64   if so, abort with error
+       MOV  R3,R3             get msw
+       JNE  $+8               set, so must be >=65536
+       CI   R4,64
+       JL   FW07J
+*  mark sector as bad in the bitmap
+       INC  R7                add to bad sectors
+       MOV  R3,R0
+       MOV  R4,R1
+       DIV  @SECAUS,R0        get au# in r0
+       MOV  R0,R1             save
+       SRL  R1,3              /8 to get byte offset
+       ANDI R0,>7             mask bit offset only
+       LI   R2,>8000          high bit set
+       MOV  R0,R0             ANY BIT SET
+       JEQ  $+4               NO SKIP SHIFT
+       SRL  R2,0              shift accordingly
+       AI   R1,VCBUF          point into table
+* correction for not adding in bit was moving byte
+       BL   @VSBR             Get the current byte value
+       SOCB R2,R0             add in this bit
+       BL   @VSBW             write set bit to vdp
+       MOV  R7,@BDNUM
+       STWP R11               save myws
+       MOV  R11,@WSBCK1+2
+       LWPI VDPREG            use DISPLAY ws
+       MOV  @BDNUM,R0         bad sector #
+       LI   R2,FWVNUM+1       where to put it
+       CLR  @CONV32           DO 16 BIT CONVERT
+       BL   @CNVNM            convert to dec.
+       SETO @CONV32           RESET TO 32 BIT FOR SECTOR #
+       MOVB @FWVNUM,R2        get length
+       SRL  R2,8
+       MOV  R2,@NDNUMD        length to write
+       BL   @VMBW
+       DATA 19*SCRWID+33,FWVNUM+1
+NDNUMD DATA 0
+* restore ws and continue
+WSBCK1 LWPI 0
+*  comes here if good sector or done with marking of bad
+FW14   INC  R4                next
+       JNE  $+4               didn't roll over to 0
+       INC  R3
+       C    R4,R6             equal?
+       JNE  FW13              no - keep going
+       C    R3,R5             equal?
+       JNE  FW13              no - keep going
+*   done reading hard disk. write bitmap if any bad sectors marked
+       CLR  @CONV32           done with 32-bit number conversions
+       MOV  R7,R7             any marked?
+       JEQ  FW16              no - don't bother writing to hard disk
+       LI   R4,1              sector 1
+       LI   R5,VCBUF
+       CLR  @MSSEC
+FW15   LI   R1,TEMP
+       MOV  R5,@$+8
+       BL   @VMBR
+       DATA 0,256
+       MOV  R4,R0
+       LI   R1,TEMP
+       BLWP @WSHRD
+       DATA FW15
+       AI   R5,256
+       INC  R4
+       CI   R4,32
+       JNE  FW15
+       BL   @SHOW$1
+       DATA WVFEX,SCRWID*22+18      EXIT
+       BL   @COMNB
+       DATA WVEREX
+FW16   B    @UTIL
+*

@@ -1,0 +1,127 @@
+*** MODULE NAME: DSKEMU ***
+*
+* for file emulation of dsk1
+*
+*    KEEP THE NEXT TWO LINES IN THIS ORDER!!!!!
+* C - Create
+DSKEMU BLWP @GETDRV
+       DATA >0200             main disk, major charles winchester only
+       BL   @SHOW$1
+       DATA DET1,19*SCRWID+1
+       BL   @FILL
+       DATA DEFNAM,10,>2000
+       LI   R0,19*SCRWID+17
+       LI   R1,DEFNAM-1
+       CLR  *R1
+       BLWP @INPUT
+       DATA 10,>202E          10 max, period/space illegal
+       LI   R4,S1BUFF         pointer to sector 1 buffer
+       LI   R5,DEFNAM         pointer to filename
+       BL   @DBS
+       JNE  $+6               not found - good
+       B    @DSKEMU
+       LI   R1,TEMP
+       BL   @VMBR             SAVE HARD PATH INFO
+       DATA 0,SCRWID*2
+       MOV  @DRVNUM,@DEDRV    save drive number
+       MOV  @DIRAUS,@DIRAUD
+       MOV  @SECAUS,@SECAUD
+       LI   R0,1
+       MOV  R0,@DIRAUS
+       CLR  @HRDS
+       CLR  @HRDD
+       CLR  @PATHS
+       CLR  @PATHD
+       BL   @CLTOP
+       BL   @SETMN
+       BL   @INITMN
+*      BL   @CKPP
+*      DATA UTIL
+       BL   @SETD
+* CREATE THE EMULATION FILE
+       BL   @CLMID
+       LI   R0,>8300
+       CLR  *R0+
+       MOV  @VOLUME+TOTSEC,*R0
+       MOV  *R0+,R6           SAVE TOTAL # OF SECTORS
+       LI   R1,>2100          program file, dsk1. emulation file
+       MOV  R1,*R0+
+       CLR  *R0+
+       CLR  *R0+
+       CLR  *R0+
+       CLR  *R0+
+       CLR  @>834C            create code
+       CLR  @>8350            pointer to additional info block
+       BL   @VMBW             MOVE A COPY OF NAME TO VDP
+       DATA >0600,DEFNAM,10
+       LI   R0,DEFNAM         pointer to filename
+       MOV  R0,@>834E
+       MOV  @DEDRV,@DRVNUM
+       BLWP @DSRSUB
+       DATA >A5
+       SETO @HRDD
+* BEGIN THE COPY
+       BL   @VMBW             SHOW TO PATH
+       DATA 3*SCRWID,TEMP,SCRWID*2
+       BL   @SHOW$1           DISPLAY EMULATING IN:
+       DATA EMUIN,20*SCRWID+1
+       BL   @SHOW$1
+       DATA CPYOUT,20*SCRWID+23  OUT:
+       CLR  R15               DONE FLAG
+       CLR  R7                START SECTOR FOR WRITE
+       CLR  R0                START AT BEGINNING OF DISK
+EMLP   LI   R1,VCBUF          START OF VDP BUFFER
+       MOV  @MAIND,@DRVNUM    FLOPPY DR #
+EMFXT  LI   R2,GENBUF+1        SHOW THE SECTOR # READING
+       MOV  R1,R14
+       BL   @CNVNM
+       BL   @SHOW$1
+       DATA GENBUF,20*SCRWID+15
+       MOV  R14,R1
+       BLWP @RSVDP            GET A SECTOR
+       DATA EMUERR            ERROR
+       DEC  R6                ALL READ
+       JEQ  EMALLD            YES
+       INC  R0                NEXT SECTOR
+       AI   R1,>0100     NEXT BUFFER
+       CI   R1,>3800     ALL BUFFERS USED
+       JNE  EMFXT
+       LI   R3,>0028          TOTAL SECTORS TO WRITE
+EMLP1  MOV  R7,@>8302         START WRITE SECTOR #
+       A    R3,R7             SET FOR NEXT TIME
+       MOV  R3,@>834C         LOAD SECTORS TO WRITE
+       LI   R3,VCBUF          START BUFFER ADDRESS
+       MOV  R3,@>8300
+       LI   R3,>0600          VDP ADDRESS OF NAME
+       MOV  R3,@>834E
+       CLR  @>8350            INDICATE EXTRA INFO BLOCK STARTS AT 8300
+       MOV  @DEDRV,@DRVNUM    SAVE DRIVE #
+       BLWP @DSRSUB           do i/o
+       DATA >25
+       MOV  R0,R12
+       MOV  R7,R0
+       LI   R2,GENBUF+1        SHOW THE SECTORS WRITTEN
+       MOV  R1,R14
+       DEC  R0
+       BL   @CNVNM
+       BL   @SHOW$1
+       DATA GENBUF,20*SCRWID+28
+       MOV  R14,R1
+       MOV  R12,R0
+       MOV  R15,R15           all done
+       JEQ  EMLP              no read some more
+       B    @UTIL
+EMALLD LI   R3,VCBUF-256
+       S    R3,R1
+       MOV  R1,R3
+       SRL  R3,8              make it a count
+       SETO R15               set all done flag
+       JMP  EMLP1             go do last write
+*
+EMUERR BL   @OTHERR
+       DATA SE6
+       BL   @CONAB1
+       JMP  EMUERR
+EMUIN  BYTE 13
+       TEXT 'Emulation In:'
+*

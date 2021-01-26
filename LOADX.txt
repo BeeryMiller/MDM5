@@ -1,0 +1,247 @@
+*
+       TITL 'E/A 3 LOADER FOR MDM5'
+       DEF  MDM
+*
+MDM    B    @MAIN
+TXT40  BYTE >F0
+MCL    EQU  40                               Max Column Length
+VDP1   EQU  >83D4
+BUFADD EQU  >834E
+PABADD EQU  >8356
+*
+VDPDAT DATA >8000,>81F0,>8200,>830F,>8401
+       DATA >8508,>8601,>87F4,0
+*
+MDM5   DATA >050D,>1100,>0000,>2000,>0009
+       TEXT 'DSK1.MDM5'
+       EVEN
+TEMP   BSS  6
+MYREG  BSS  32
+*
+MAIN   LWPI MYREG
+*
+       BLWP @VMBW        Load pab
+       DATA >1000
+       DATA MDM5
+       DATA 21
+       LI   R0,>1009
+       MOV  R0,@>8356
+       BLWP @DSRLNK      Load it
+       DATA 8
+       JNE  DSKOK        No Error
+       BLWP @0
+DSKOK  CLR  R0           CLEAR SCREEN FOR TEXT MODE
+       LI   R1,'  '
+       LI   R2,MCL*40
+CLRSC  BLWP @VSBW
+       INC  R0
+       DEC  R2
+       JNE  CLRSC
+       MOVB @TXT40,@>83D4
+       LI   R1,VDPDAT    LOAD OK SO SETUP VDP FOR E/A ENVIORNMENT
+LOOP1  MOV  *R1+,R0
+       JEQ  DSKOK1
+       SWPB R0
+       MOVB R0,@>8C02
+       SWPB R0
+       MOVB R0,@>8C02
+       JMP  LOOP1
+DSKOK1 BLWP @VMBR
+       DATA >1100        Get Header info
+       DATA TEMP         Save it
+       DATA 6
+       MOV  @TEMP+2,@MDM5L    length of file
+       MOV  @TEMP+4,R2   Get entry point/load point
+       MOV  R2,@MDM5L1
+       MOV  R2,@DSKGO+2  Patch entry point
+TSTMOR BLWP @VMBR        Get pgm from VDP
+       DATA >1106
+MDM5L1 DATA >E000
+MDM5L  DATA >1FE0
+       LI   R1,>8300          INIT PAD
+CLRPAD CLR  *R1+
+       CI   R1,>83C0          ALL CLEARED
+       JNE  CLRPAD            NO
+       LI   R0,>0400          CLEAR OUT PAB AREA
+       CLR  R1
+CLRVP  BLWP @VSBW
+       INC  R0
+       CI   R0,>0420
+       JNE  CLRVP
+*
+DSKGO  B    @>0          GO TO IT
+*
+VMBW   DATA >8300
+       DATA VMBW0
+VMBW0  BL   @VPADD
+VMBW1  MOVB *R1+,@>8C00
+       DEC  R2
+       JNE  VMBW1
+       RTWP
+*
+VSBW   DATA >8300
+       DATA VSBW1
+VSBW1  BL   @VPADD3
+       MOVB R1,@>8C00
+       RTWP
+*
+*
+VSBR   DATA >8300
+       DATA VSBR0
+VSBR0  BL   @VPADD4
+       MOVB @>8800,@>2(R13)
+       RTWP
+*
+VMBR   DATA >8300
+       DATA VMBR0
+VMBR0  BL   @VPADD1
+VMBR1  MOVB @>8800,*R1+
+       DEC  R2
+       JNE  VMBR1
+       RTWP
+*
+VPADD  LI   R1,>4000
+       JMP  VPADD2
+VPADD1 CLR  R1
+VPADD2 MOV  *R14+,R2
+       MOVB @VPLAD,@>8C02
+       SOC  R1,R2
+       MOVB R2,@>8C02
+       MOV  *R14+,R1
+       MOV  *R14+,R2
+       RT
+*
+VPADD3 LI   R1,>4000
+       JMP  VPADD5
+VPADD4 CLR  R1
+VPADD5 MOV  *R13,R2
+       MOVB @VPLAD,@>8C02
+       SOC  R1,R2
+       MOVB R2,@>8C02
+       MOV  @2(R13),R1
+       MOV  @4(R13),R2
+       RT
+*
+VPLAD  EQU  >8305
+*
+SCLEN  EQU  >8354
+SCNAME EQU  >8356
+CRULST EQU  >83D0
+SADDR  EQU  >83D2
+GPLWS  EQU  >83E0
+HRD    DATA 0
+FLGPTR DATA 0
+SVGPRT DATA 0
+SAVCRU DATA 0
+SAVENT DATA 0
+SAVLEN DATA 0
+SAVPAB DATA 0
+SAVVER DATA 0
+NAMBUF DATA 0,0,0,0,0
+DLNKWS DATA 0,0,0,0,0
+TYPE   DATA 0,0,0,0,0,0,0,0,0,0,0
+C100   DATA 100
+H20    EQU  $
+H2000  DATA >2000
+DECMAL TEXT '.'
+HAA    BYTE >AA
+DSRLNK DATA DLNKWS,DLENTR
+DLENTR MOV  *R14+,R5
+       LIMI 2
+SNDW   MOVB @>83CE,R1    MAKE SURE SOUND IS OFF
+       JNE  SNDW
+       LIMI 0
+       SZCB @H20,R15
+       MOV  @SCNAME,R0
+       MOV  R0,R9
+       AI   R9,-8
+       BLWP @VSBR
+       MOVB R1,R3
+       SRL  R3,8
+       SETO R4
+       LI   R2,NAMBUF
+LNK$LP INC  R0
+       INC  R4
+       C    R4,R3
+       JEQ  LNK$LN
+       BLWP @VSBR
+       MOVB R1,*R2+
+       CB   R1,@DECMAL
+       JNE  LNK$LP
+LNK$LN MOV  R4,R4
+       JEQ  LNKERR
+       CI   R4,7
+       JGT  LNKERR
+       CLR  @CRULST
+       MOV  R4,@SCLEN
+       MOV  R4,@SAVLEN
+       INC  R4
+       A    R4,@SCNAME
+       MOV  @SCNAME,@SAVPAB
+SROM   LWPI GPLWS
+       CLR  R1
+       LI   R12,>0F00
+NOROM  MOV  R12,R12
+       JEQ  NOOFF
+       SBZ  0
+NOOFF  AI   R12,>0100
+       CI   R12,>2000
+       JEQ  NODSR
+NOOFF2 MOV  R12,@CRULST
+       SBO  0
+       LI   R2,>4000
+       CB   *R2,@HAA
+       JNE  NOROM
+       A    @TYPE,R2
+       JMP  SGO2
+SGO    MOV  @SADDR,R2
+       SBO  0
+SGO2   MOV  *R2,R2
+       JEQ  NOROM
+       MOV  R2,@SADDR
+       INCT R2
+       MOV  *R2+,R9
+       MOVB @SCLEN+1,R5
+       JEQ  NAME2
+       CB   R5,*R2+
+       JNE  SGO
+       SRL  R5,8
+       LI   R6,NAMBUF
+NAME1  CB   *R6+,*R2+
+       JNE  SGO
+       DEC  R5
+       JNE  NAME1
+NAME2  INC  R1
+       MOV  R1,@SAVVER
+       MOV  R9,@SAVENT
+       MOV  R12,@SAVCRU
+       BL   *R9
+       JMP  SGO
+       SBZ  0
+       LWPI DLNKWS
+       MOV  R9,R0
+       BLWP @VSBR
+       SRL  R1,13
+       JNE  IOERR
+       RTWP
+NODSR  LWPI DLNKWS
+LNKERR CLR  R1
+IOERR  SWPB R1
+       MOVB R1,*R13
+       SOCB @H20,R15
+       RTWP
+*
+MULTWT MOV  *R3+,R1      MULTI-LINE WRITE
+       MOV  R1,R1        MORE LINES?
+       JEQ  MULTDN
+       MOV  R1,@MTWTD1
+       MOV  *R3+,@MTWTD2 LENGTH
+       MOV  *R3+,@MTWTD  SCREEN LOCATION
+       BLWP @VMBW
+MTWTD  DATA 0
+MTWTD1 DATA 0
+MTWTD2 DATA 0
+       JMP  MULTWT
+MULTDN RT
+*
+       END  MDM

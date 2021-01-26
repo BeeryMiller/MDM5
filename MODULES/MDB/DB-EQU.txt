@@ -1,0 +1,75 @@
+       TITL 'MYARC HDCC Backup/Restore V1.0    5-23-88'
+       IDT  'B/R V1.2'
+       DEF  SFIRST,SLOAD,SLAST
+*
+       DORG >2000
+*********************************************************************
+* Parameter List passed by MDM5
+*
+SPAU   DATA 2            01 Sector per AU
+WDS    BYTE 1            2 WDS Drive #
+FDRS   BYTE 0,0,0,0      3456 floppys to use in process (01-08 00 terminate)
+       BYTE 0,0,0,0      789A
+BUTYP  BYTE 0            B Backup or Restore Type (00-Selective)
+BR     BYTE 0            C Restore/Backup/Catalog op (0,1,2 FF=BACK W/CAT)
+DR1    BYTE 0,0,0        DEF Default list for floppies Drive 1
+DR2    BYTE 0,0,0        012
+DR3    BYTE 0,0,0        345
+DR4    BYTE 0,0,0        678
+DR5    BYTE 0,0,0        9AB
+DR6    BYTE 0,0,0        CDE
+DR7    BYTE 0,0,0        F01
+DR8    BYTE 0,0,0        234
+RACT   BYTE 0            5 The action taken on protected files for restore
+*                        (00-Auto overide 01-Prompted 02-Skip)
+BACKN  BSS  6            6789AB CREATed date of backup
+BACK#  BSS  4            CDEF Decimal Backup disk number (Not passed)
+WDSCRU BSS  2            01 CRU Base for HDCC passed by MDM5
+PONTRS BSS  4            2345 POINTERS TO PRINTER NAME AND RELOAD PATH
+FCBP   BSS  256          FCB Pointers
+DIRSEC EQU  FCBP+254     SECTOR # OF FDR POINTERS
+*********************************************************************
+*
+MAINWS EQU  >8382        MAIN WORKSPACE/Input
+WS2    EQU  >83A2        WS for output
+*
+WBUF1  EQU  >A000        2nd CPU sector buffer
+FIB    EQU  >A100        FIB sector for active disk
+SEC0   EQU  FIB          SECTOR 0 OF OUTPUT DISK IMAGE
+FIBS   EQU  >A200        Table of pointer for FIB sectors 254 BYTES
+WS3    EQU  FIBS         WS for selective restore
+PTYPE  EQU  >A300        PRINTER TYPE NAME 40 BYTES
+FIBSCS EQU  PTYPE
+WS1    EQU  PTYPE+40     WS for drive setup
+FILOUT EQU  WS2+6        R3 of WS2 of count of total output files
+*
+SSEC   EQU  WS1+32       CURRENT SECTOR #
+BSEC   EQU  SSEC+2       Backup diskette sector #
+ACTDR  EQU  BSEC+2        ACTIVE DRIVE #
+DRTOT  EQU  ACTDR+2      TOTAL # OF ACTIVE DRIVES
+BAKCNT EQU  DRTOT+2      Hex number of current backup 1-9999
+RSTTOT EQU  BAKCNT+2
+DNTG   EQU  RSTTOT+2     Number of disks restored
+FCBLST EQU  DNTG+2       Pointer to position in WDS FCB list
+BD1IN  EQU  FCBLST+2     Flag to indicate 1st backup disk stil in drive
+TOTFSC EQU  BD1IN+2      Total # of sectors on active floppy
+FIBLOC EQU  TOTFSC+2     Location in FIB to store file info
+MXAU   EQU  FIBLOC+2     Maximum room available to store a sector
+MPOINT EQU  MXAU+2       Memory pointer to move data to
+FILTOT EQU  MPOINT+2     Total # of files in backup set
+FILTIN EQU  FILTOT+2     Total # of files in backup set used for restore
+NXTOUT EQU  FILTIN+2     Memory List of file names
+NXTDSP EQU  NXTOUT+2     Pointer to next output name to display
+FIB#   EQU  NXTDSP+2     Sector # used as FIB
+NXTFIB EQU  FIB#+2       Next FIB to be written
+PROCNT EQU  NXTFIB+2     Count of protected files
+DFULL  EQU  PROCNT+2      Disk full flag
+DONE   EQU  DFULL+2      Operation complete
+GOODSC EQU  DONE+2       Total # of good sectors on active diskette
+FIBTOT EQU  GOODSC+2     Total # of FIBs on disk
+WIONAM EQU  FIBTOT+2     10 BYTES FOR NAME OF WDS I/O FILES
+* ABOVE NEEDS 10 BYTES ************************
+DTEXT  EQU  WIONAM+10    6 BYTES FOR HEX TO DEC. CONVERSION
+*
+       AORG FCBP+256      Start of pgm
+*

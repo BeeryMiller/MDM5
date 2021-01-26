@@ -1,0 +1,481 @@
+*********************************************
+* Printout of Backup statics                *
+*********************************************
+*
+PRTRPT DATA WS5,PRTSTA
+PRTSTA
+       BLWP @VMBR        SAVE BUFFER
+       DATA >1000
+       DATA WBUF1
+       DATA 256
+       BL   @DUPMEM
+       DATA 256,'  ',WBUF1
+       MOV  @PLINE,R1    AT TOP OF PAGE
+       JEQ  PRTT1        YES MUST PRINT HEADER
+       C    @PLINE,@PLMAX6     ROOM TO START A PRINTOUT
+       JLT  PRTT2        YES
+PRTT1  BL   @PHEAD1      FORM FEED AND PRINT IT
+PRTT2  BLWP @VMBR        GET THE INFO ON DIR
+       DATA >1100+182
+       DATA WBUF1+182
+       DATA 74
+       BL   @WRTLP       Load data needed
+       DATA FIRSTL       First line data
+       LI   R0,WBUF1+182
+       MOV  *R0+,R2      GET LENGTH OF PATHNAME
+       LI   R1,WBUF1+11   DISPLAY CPU ADDRESS
+PDIRL  MOVB *R0+,*R1+
+       DEC  R2
+       JNE  PDIRL
+       MOV  @WBUF1+246,R3 FILES IN DIRECTORY
+       MOV  R3,R6        GET A COPY OF THIS COUNT
+       BLWP @H2DM
+       DATA WBUF1+76
+       BL   @PDSR        Move to vdp and print
+*
+       BL   @PDSR        BLANK LINE
+*
+       BL   @WRTLP       4rd line
+       DATA FOURL
+       BL   @PDSR
+*
+       BL   @WRTLP       5th Line
+       DATA FIVEL
+       BL   @PDSR
+*
+PRTST1 BLWP @BLDFL       BUILD A FILE LINE
+       BL   @PDSR1       Print line
+       MOV  @PLINE,R1    AT THe start of a page
+       JNE  PRTSTC       NO
+       BL   @PHEAD1      GO PRint page header
+PRTSTC LI   R1,32        NEXT FILE START
+       S    R1,@NXTOUT   BACKUp pointer of file info store by a file
+       LI   R0,LSTST     MOVE files info up by 32 bytes
+       LI   R1,LSTST+32
+       LI   R2,32*126
+FMOVLP MOV  *R1+,*R0+
+       DECT R2
+       JNE  FMOVLP
+       DEC  R6           Any more files to do
+       JNE  PRTST1       Yes
+       LI   R0,WBUF1      PRINT 80 DASHES TO SEPARATE DIR PRINTOUTS
+       LI   R1,'--'
+       LI   R2,80
+DASHPL MOV  R1,*R0+
+       DECT R2
+       JNE  DASHPL
+       BL   @PDSR        PRINT DASH LINE
+       BL   @PDSR        AND A BLANK LINE
+POUT   BLWP @VMBR
+       DATA >1000
+       DATA WBUF1
+       DATA 256
+       RTWP
+*
+FIRSTL DATA BACKM1       backup
+       BYTE 0,10
+       DATA OF           of
+       BYTE 7,2
+       DATA FILMIN       FILES
+       BYTE 62,5
+       DATA DIR          IN DIR:
+       BYTE 68,7
+       DATA 0
+*
+FOURL  DATA DSKMIN       DISK
+       BYTE 0,4
+CATLN4 DATA FILE         FILENAME
+       BYTE 6,8
+       DATA SIZE         SIZE
+       BYTE 17,4
+       DATA TLEN         TYPE    LENGTH
+       BYTE 25,14
+       DATA DPMPT        PROT.
+       BYTE 40,1
+       DATA CREAT        Created
+       BYTE 43,7
+       DATA UPDTD        Updated
+       BYTE 62,7
+       DATA 0
+*
+FIVEL  DATA DASH
+       BYTE 0,4
+       DATA DASH
+       BYTE 6,10
+       DATA DASH
+       BYTE 17,6
+       DATA DASH
+       BYTE 25,7
+       DATA DASH
+       BYTE 33,6
+       DATA DASH
+       BYTE 40,1
+       DATA DASH
+       BYTE 43,17
+       DATA DASH
+       BYTE 62,17
+       DATA 0
+*
+PDSR   BLWP @VMBW        Get line to print into vdp
+       DATA VBUF
+       DATA WBUF1
+       DATA 80
+PDSR1  LI   R0,POLOC+9
+       MOV  R0,@>8356
+       BLWP @DSRLNK      Print the line
+       DATA 8
+       MOV  R11,R12
+       BL   @DUPMEM
+       DATA 80,'  ',WBUF1   Clear out cpu buffer
+       INC  @PLINE       TEST if page done
+       C    @PLINE,@PLMAX
+       JLT  PDSR2        NO
+       CLR  @PLINE       START of page count
+PDSR2  B    *R12         Rtn
+*
+**********************
+* Move data to form a print line starting at WBUF1
+* List provided on entry is
+* Start of string address
+* OFFSET/length
+* Ends when >0000 is found for entry STRING address
+**********************
+*
+WRTLP  MOV  *R11+,R3     Get list to move
+WRTLP1 MOV  *R3+,R4      GET STRING TO MOVE OR DONE
+       JEQ  WRTLP3       IF NULL THEN DONE
+       MOVB *R3+,R0      GET CPU OFFSET TO MOVE TO
+       SRL  R0,8
+       AI   R0,WBUF1
+       MOVB *R3+,R2      Length
+       SRL  R2,8
+WRTLP2 MOVB *R4+,*R0+
+       DEC  R2
+       JNE  WRTLP2
+       JMP  WRTLP1
+WRTLP3 RT
+*
+TDCVT  INCT R8           POINT TO DATE
+       MOV  R11,R9       Save rtn
+       LI   R7,'/ '
+       MOV  *R8,R3       GET INFO
+       SLA  R3,7         GET MONTH
+       SRL  R3,12
+       BL   @CVT2
+       MOV  *R8,R3       Get it again
+       ANDI R3,>001F     Day
+       BL   @CVT2
+       MOV  *R8,R3
+       SRL  R3,9         Year
+       SWPB R7
+       BL   @CVT2
+       DECT R8           Get to time
+       LI   R7,': '
+       MOV  *R8,R3
+       SRL  R3,11        Hour
+       BL   @CVT2
+       MOV  *R8,R3
+       SLA  R3,5
+       SRL  R3,10        Minute
+       BL   @CVT2
+       SWPB R7
+       MOV  *R8+,R3
+       SLA  R3,11
+       SRL  R3,10        Second
+       BL   @CVT2
+       INCT R8
+       B    *R9
+*
+CVT2   MOV  R3,R6
+       CLR  R5
+       DIV  @TEN,R5
+       MOVB @CHARS(R5),*R0+   Tens digit
+       MOVB @CHARS(R6),*R0+   Ones digit
+       MOVB R7,*R0+      Separator
+       RT
+*
+*
+BLDFL  DATA WS3,BLDFL1
+BLDFL1 LI   R8,LSTST     GET POSITION IN FILES BUFFER TO DO
+       BL   @DUPMEM      CLEAR OUT LINE
+       DATA 80,'  ',WBUF1   USED BY CATALOG
+       LI   R0,WBUF1+6  START OF FILE NAME
+       LI   R2,10
+BLDFL2 MOVB *R8+,*R0+
+       DEC  R2
+       JNE  BLDFL2
+       MOV  *R8+,R10     GET FILE SIZE
+       MOV  *R8+,R4      GET FILE TYPE
+       MOV  *R8+,R12     GET EOF OFFSET/REC. LEN
+       AI   R8,6         SKIP TO TIME DATE STAMP
+       LI   R0,WBUF1+43
+       BL   @TDCVT       CONVERT CREATE DATE/TIME
+       INC  R0
+       BL   @TDCVT       CONVERT UPDATE
+       MOV  *R8+,R9      GET DISK #
+       INCT R8           SKIP OVER MEMORY LOC.
+       COC  @PROBIT,R4   IS FILE PROTECTED
+       JNE  BLDFL3       NO
+       LI   R1,'P '
+       MOVB R1,@WBUF1+40
+BLDFL3 LI   R7,WBUF1+25
+       LI   R2,7
+       COC  @EMBIT,R4    EMULATION FILE
+       JNE  BLDPG
+       LI   R0,EMUL
+       CLR  R12          NO RECORD LENGTH
+       JMP  BLDFL6
+BLDPG  COC  @PGMBIT,R4   PROGRAM
+       JNE  BLDFL4       NO
+       LI   R0,PROG
+       JMP  BLDFL5
+BLDFL4 LI   R2,4
+       LI   R7,WBUF1+25
+       LI   R0,INT
+       COC  @INTBIT,R4   IS FILE INTERNAL
+       JEQ  BLDFL5       YES
+       LI   R0,DIS       MAKE DISPLAY
+BLDFL5 MOVB *R0+,*R7+    MOVE DISP, INT, PGM OR EMULATION
+       DEC  R2
+       JNE  BLDFL5
+       COC  @PGMBIT,R4   WAS IT PGM
+       JEQ  BLDFL7       YES
+       LI   R2,3         FIX OR VAR
+       LI   R0,VAR
+       COC  @VARBIT,R4   VARIABLE
+       JEQ  BLDFL6       YES
+       LI   R0,FIX
+BLDFL6 MOVB *R0+,*R7+
+       DEC  R2
+       JNE  BLDFL6
+BLDFL7 BLWP @VMBW        MOVE WHAT WE HAVE TO VDP
+       DATA VBUF
+       DATA WBUF1
+       DATA 80
+       MOV  R9,R3        DISK #
+       BL   @H2DD        MOVE IT TO VDP
+       DATA VBUF
+       MOV  R10,R3       GET FILE SIZE
+       CLR  R5
+       BL   @H2DD5       5 DIGIT #
+       DATA VBUF+18
+       COC  @EMBIT,R4    EMULATION
+       JEQ  BLDFLB       YES NO RECORD LENGTH NEEDED
+       COC  @PGMBIT,R4   PROGRAM SIZE NEEDED
+       JNE  BLDFL9
+       MOV  R10,R6       FIGURE BYTES IN PROGRAM
+       MOVB R12,R6
+       SWPB R6
+       MOV  R6,R3
+       CLR  R5
+       DIV  @D256,R5     SIZE
+       MOV  R6,R6        ANY REMAINDER
+       JEQ  BLDFL8
+       S    @D256,R3
+BLDFL8 MOV  R10,R5       GET ANY HIGH BYTE FOR SIZE
+       SRL  R5,8         MOVE IT TO BOTTOM
+       JMP  BLDFLA
+BLDFL9 MOV  R12,R3       RECORD LENGTH
+       ANDI R3,>00FF     CLEAR OUT EOF OFFSET
+       CLR  R5           NO HIGH BYTES
+BLDFLA BL   @H2DD5       LOAD LENGTH
+       DATA VBUF+34
+BLDFLB RTWP
+*
+*
+POPN   MOV  R11,@SVRTNP
+       LI   R0,PTYPE     GET LENGTH OF PRINTER NAME
+       MOVB *R0+,@PPAB+9 SAVE LENGTH
+       BLWP @VMBW        1st open printer
+       DATA POLOC
+       DATA PPAB         Printer open pab
+       DATA 10
+       BLWP @VMBW
+       DATA POLOC+10
+       DATA PTYPE+1      Load printer name
+       DATA 39           For max length
+       BL   @PDSR        go open printer
+       MOVB @WRITE,R1    Make operation a write
+       LI   R0,POLOC
+       BLWP @VSBW
+       MOV  @SVRTNP,R11
+       RT
+*
+PHEAD1 MOV  R11,@SVRTNP
+       MOVB @TOF,@WBUF1  TOF
+       BL   @PDSR
+       JMP  PHEAD2
+PHEAD  MOV  R11,@SVRTNP
+PHEAD2 BL   @WRTLP       BUILD header line
+       DATA HEDLIN
+       INC  @PGCNT       ADD To page #
+       MOV  @PGCNT,R3
+       BLWP @H2DM
+       DATA WBUF1+43     PAGE #
+       BLWP @VMBR        GET Date from screen
+       DATA MCL*3+22     CREATED: XX/XX/XX
+       DATA WBUF1+62
+       DATA 17
+       BL   @PDSR        PRINT it
+       BL   @PDSR        2 BLAnk lines
+       BL   @PDSR
+       CLR  @PLINE       INIT
+       MOV  @SVRTNP,R11
+       RT
+*
+HEDLIN DATA FIB+224      BACKUp name
+       BYTE 0,20
+       DATA PAG          PAGE
+       BYTE 38,4
+       DATA 0
+*
+VOLHED DATA VOL          VOL:
+       BYTE 0,4
+       DATA FIB+170
+       BYTE 5,10
+       DATA 0
+*
+NOBCK  BL   @STERR
+       DATA NOTABD
+       DATA 18
+CATJMP B    @CATDUN
+*
+CATDSK BL   @CLRLN       CLEAR SCREEN
+       DATA 0,20         FOR 20 LINES STARTING LINE 0
+       BL   @CLRLN
+       DATA MCL*22,2     AND COMMAND AREA
+       BLWP @VMBW        ASK FOR FLOPPY DR#
+       DATA MCL*19+1
+       DATA CATMSG
+       DATA 26
+       JMP  SCC1
+SCCH   BLWP @HONK
+SCC1   BL   @GETIKY
+       DATA MCL*19+28
+       CI   R1,>0F00     FCTN/9
+       JNE  SCC2
+       JMP  CATJMP
+SCC2   CI   R1,>3100     DRIVE 1
+       JLT  SCCH         <
+       CI   R1,>3800
+       JGT  SCCH         >
+       LI   R0,MCL*19+28 SHOW #
+       BLWP @VSBW
+       ANDI R1,>0F00     REMOVE HI BITS
+       MOVB R1,@DRRD
+SCC2R  CLR  @SSEC        GET SECTOR 0
+       BL   @GETSEC
+       DATA SEC0
+       DATA DRRD
+       DATA CATDSK       ERROR
+       MOVB @SEC0+6,R1   NAME SURE THERE IS A NUMBER IN THIS POSITION
+       CI   R1,>3100     IF <1 NOT GOOD
+       JLT  NOBCK        IF LESS NOT A BACKUP DISK
+       CI   R1,>3900     IF >9 NOT GOOD
+       JGT  NOBCK
+       MOVB @SEC0+20,R0  IF NOT A NULL THEN NOT A COMPLETE BACKUP DISK
+       JNE  NOBCK
+       BL   @CLRLN
+       DATA MCL*19,1
+       BL   @DUPMEM
+* THIS MAY SEEM STRANGE BELOW BUT IT WILL SAVE MEMORY
+       DATA 256,'  ',WBUF1
+       BL   @WRTLP
+       DATA CATSC1
+       BLWP @VMBW        DISK: , CREATED: , BACKUP NAME:
+       DATA MCL*3
+       DATA WBUF1
+       DATA MCL*3
+       BL   @DUPMEM
+       DATA 256,'  ',WBUF1
+       BL   @WRTLP       GO BUILD THE PROMPTS FOR DIRS,FILES,DISKS IN BACKUP
+       DATA CATCSN
+       BLWP @VMBW        SHOW ALL THREE PROMPT LINES
+       DATA MCL*7
+       DATA WBUF1
+       DATA MCL*5
+       BL   @WRTLP       GO BUILD DATE
+       DATA DTLN
+       BLWP @VMBW
+       DATA MCL*3+31     SHOW DATE
+       DATA WBUF1
+       DATA 8
+       BLWP @VMBW        SHOW DISK#
+       DATA MCL*3+7
+       DATA SEC0+6
+       DATA 4
+       LI   R1,'1 '      TEST IF THIS IS DISK #1
+       C    R1,@SEC0+6   THIS POSITION MUST 1 & SPACE FOR IT TO BE
+       JNE  CATDUN       IF NOT CAT IS DONE
+       INC  @SSEC        ITS THE 1ST DISK SO GET THE REST OF INFO
+SCC2R1 BL   @GETSEC
+       DATA SEC0
+       DATA DRRD
+       DATA SCC2R1       ERROR
+       BLWP @VMBW        SHOW BACKUP NAME
+       DATA MCL*5+14
+       DATA SEC0+224
+       DATA 20
+       LI   R9,SEC0+250  START OF INFO
+       LI   R8,3         3 LINES TO DO
+       LI   R6,SHOWT     LINE POSITION TABLE
+SLOOP  MOV  *R9+,R3
+       BLWP @H2DM        CONVERT TO DECIMAL
+       DATA DTEXT
+       MOV  *R6+,@SHOWD
+       BLWP @VMBW
+SHOWD  DATA 0
+       DATA DTEXT
+       DATA 4
+       DEC  R8           DONE ALL THREE
+       JNE  SLOOP        NO
+CATDUN BLWP @VMBW        EXIT PROMPT
+       DATA MCL*22+13
+       DATA PROCC        CATALOG
+       DATA 7
+       BLWP @VMBW
+       DATA MCL*22+22    EXIT
+       DATA PROE
+       DATA 4
+       BL   @GTKYCC      GET A 'C' KEY MAYBE
+       BL   @SOLID
+       B    @CATDSK      CAT ANOTHER
+*
+SHOWT  DATA MCL*11+18        # OF DISKS
+       DATA MCL*9+18         # OF FILES
+       DATA MCL*7+18         # OF DIRS
+*
+CATSC1 DATA REST         DISK:
+       BYTE 1,5
+       DATA SEC0+6
+       BYTE 8,4          4 DIGIT #
+       DATA CREAT        CREATED:
+       BYTE 22,8
+       DATA BCKNAM       BACKUP NAME:
+       BYTE MCL*2+1,12
+       DATA 0
+*
+CATCSN DATA DIRMIN       DIRS TO BACKUP:
+       BYTE 1,16
+       DATA MDSKM1       MAKE DIRS IN BACKUP:
+       BYTE 7,2
+       DATA FILMIN       FILES TO BACKUP:
+       BYTE MCL*2+1,16
+       DATA MDSKM1       MAKE FILES IN BACKUP:
+       BYTE MCL*2+7,2
+       DATA DSKMIN       DISKS IN BACKUP:
+       BYTE MCL*4+1,16
+       DATA 0
+*
+DTLN   DATA SEC0         MO
+       BYTE 0,2
+       DATA SEP          /
+       BYTE 2,1
+       DATA SEC0+2       DAY
+       BYTE 3,2
+       DATA SEP          /
+       BYTE 5,1
+       DATA SEC0+4       YR
+       BYTE 6,2
+       DATA 0
+*

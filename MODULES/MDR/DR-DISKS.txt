@@ -1,0 +1,320 @@
+*
+**************************
+* Used by restore to setup extra disk drives
+**************************
+*
+ASKDK  DATA WS1,ASKDK1
+*
+ASKDK1 MOV  @DRTOT,R6    Total drives
+       MOV  @ACTDR,R7    Active drive
+       MOV  @DNTG,R3     # of disks done
+       MOV  @RSTTOT,R4   Total disks in set
+       MOV  @DRRD,R10    # of current drive
+       MOV  R10,R5
+       C    R6,R7        More 1 drive available
+       JEQ  ASKO1        No, Use same drive #
+ASKLP  MOVB @FDRS(R7),R5 Get the # of drive
+ASKO1  INC  R3           Next # of backup in set
+       BLWP @H2DM        Convert it to decimal
+       DATA DTEXT
+       CLR  @SSEC        Get 1st sector of this drive
+       BLWP @BEEP
+       JMP  ASKAGN
+ASKAGH BLWP @HONK
+ASKAGN BLWP @VMBW        Display prompt
+       DATA MCL*18+1
+       DATA MDSKM        PUT DISK
+       DATA 8
+       LI   R2,4         Max of 4 bytes to display
+       LI   R8,DTEXT
+       LI   R0,MCL*18+10
+ASKDK2 MOVB *R8+,R1
+       BLWP @VSBW
+       INC  R0
+       DEC  R2           Done 4 bytes
+       JEQ  ASKDK3       Yes
+       CB   R1,@SPACE    Write a space
+       JNE  ASKDK2
+       JMP  ASKDK4
+ASKDK3 MOVB @SPACE,R1    If 4 written need a space
+       BLWP @VSBW
+       INC  R0
+ASKDK4 MOV  R0,@ASKDKD   Start position for reset of message
+       BLWP @VMBW
+ASKDKD DATA 0
+       DATA MDSKM1
+       DATA 10
+       AI   R0,10
+       MOVB R5,R1
+       AI   R1,>3000
+       BLWP @VSBW
+       BL   @GETKYC      Wait for 'c' key
+       BL   @CLRLN
+       DATA MCL*18,1
+       MOVB R5,@DRRD     Make this the drive to read
+       BL   @GETSEC
+       DATA WBUF1
+       DATA DRRD
+       DATA ASKAGH
+       LI   R0,WBUF1     Test if this is the correct disk name
+       LI   R1,BACKN
+       LI   R2,6
+ASKDKL CB   *R0+,*R1+    Correct
+       JNE  ASKAGH       No ask again
+       DEC  R2
+       JNE  ASKDKL
+       LI   R1,DTEXT     Now test backup #
+       LI   R2,4
+AKDKL1 CB   *R0+,*R1+
+       JNE  ASKAGH
+       DEC  R2
+       JNE  AKDKL1
+       INC  R7           Next disk
+       CI   R6,1         Only 1 drive available
+       JEQ  ASKDK5       Yes done
+       C    R6,R7        Done all availble
+       JEQ  ASKDK5       Yes
+       C    R3,R4        Test if all done
+       JEQ  ASKDK5       Will be all done with restore no more needed
+       JMP  ASKLP        Get it setup
+ASKDK5 MOV  R10,@DRRD    Restore drive # from entry
+       RTWP
+*
+       BLWP @VMBW
+TSTYPD DATA 0
+       DATA INITM1       FOR Backup purposes
+       DATA 10
+       MOV  R10,R1       Copy of dr#
+       SRL  R1,8
+       SLA  R1,1         POINT TO TABLE OF DRIVE DEFAULTS
+       LI   R7,DFTAB-2   DEFAULT TABLE
+       A    R1,R7        POINT TO ITS ENTRY
+       MOV  *R7,R7       NOW HAVE ITS DEFAULT LIST
+       MOV  R7,R6        Make a copy
+       CB   @SEC0+18,*R6+ Are the # of sides the same
+       JNE  INIT         No init disk
+       CB   @SEC0+19,*R6+   Is the density the same
+       JNE  INIT         No init disk
+       CB   @SEC0+17,*R6 # of tracks the same
+       JEQ  RESETD       Yes just reset & verify
+INIT   MOVB R10,@DRIO    load  drive #
+       MOV  R7,R6        get table again
+       MOVB *R6+,@SEC#+1 load sides
+       MOVB *R6+,@SEC#   load density
+       MOVB *R6,@DRIO+1   load tracks
+       BL   @DSRSUB
+       DATA FORM
+       DATA VBUF
+       NOP
+INIT1  BL   @DUPMEM      Clear out SECTOR 0
+       DATA 256,0,SEC0
+       LI   R2,SEC0+10
+       MOV  @>834A,*R2+  Total # of sectors returned
+       MOVB @DRIO+1,*R2+ Sectors/track
+       LI   R0,DSK       DISK WORD
+       MOVB *R0+,*R2+    'D'
+       MOVB *R0+,*R2+    'S'
+       MOVB *R0+,*R2+    'K'
+       MOVB *R0+,*R2+    ' '
+       MOVB *R6,*R2+     # OF TRACKS
+       MOV  R7,R6        Back to start of map
+       MOVB *R6+,*R2+    # of sides
+       MOVB *R6+,*R2+    Density
+RESETD LI   R2,SEC0      put in diskname
+       LI   R1,10        NAME AND DISK #
+       LI   R0,BACKN     Name
+RESET1 MOVB *R0+,*R2+
+       DEC  R1
+       JNE  RESET1
+       BLWP @VMBR        Get WDS directory info from screen
+       DATA 4            Start with drive #
+       DATA SEC0+20
+       DATA 36           Save all but last period if there
+       CLR  R12          Init count of good sectors
+       MOV  @SEC0+10,@TOTFSC Save total # of sectors on floppy
+       BL   @DUPMEM      set the bitmap to all used
+       DATA 200,0,SEC0+56
+       LI   R4,>00FF
+       MOV  @SEC0+18,R1  test for Quad disk
+       CI   R1,>0202     Double sided and Density
+       JNE  RESET3       No
+       CB   @SEC0+17,@QD 80 tracks
+       JNE  RESET3
+       SWPB R4
+RESET3 MOVB R4,@QDF      Set Quad flag according to disk tpye
+       MOV  @SEC0+10,R8  Total # of sectors to test
+* HFDC MUST HAVE SECTOR ZERO WRITTEN NOW!!!
+       CLR  @SSEC        write out new sector zero
+       BL   @WRTSEC
+       DATA SEC0
+       DATA DRWT
+       JMP  BADERR       If 0 is bad disk canot be used
+       INC  @SSEC        Write out new sector 1
+       BL   @DUPMEM
+       DATA 256,0,WBUF1
+       BL   @WRTSEC
+       DATA WBUF1
+       DATA DRWT
+       JMP  BADERR       If 1 is bad disk can not be used
+       CLR  R9           Sector # to verify
+RESET4 MOV  R9,@SSEC     sector # to read
+       BL   @GETSEC
+       DATA WBUF1        Data location
+       DATA DRRD         op type
+       JMP  BADERR       Cannot use disk
+       MOV  R9,R1        Get sector #
+       MOV  R1,R0
+       SRL  R1,3
+       MOVB @QDF,R4      Quad disk
+       JEQ  RESETF       No
+       SRL  R0,1
+       SRL  R1,1
+RESETF LI   R2,>0100
+       ANDI R0,7
+       JEQ  RESETG
+       SLA  R2,0
+RESETG SOCB R2,@SEC0+56(R1) Set bit
+       INC  R12          Add to count of good sectors
+RESET5 INC  R9           Next sector
+       C    R9,R8        All verfied
+       JNE  RESET4       No do next
+       MOV  R12,@GOODSC  Save count
+       BL   @CLRLN       Remove verify message
+       DATA MCL*18,1
+       LI   R0,1         Reset SECTOR # of FIB
+       MOV  R0,@FIB#
+       INC  R0           Set to start write at sector 2
+       MOV  R0,@BSEC
+*      BL   @TSTSC       Make sure its a good sector
+*      NOP               There better be some
+       BL   @DUPMEM      CLEAR OUT FIB
+       DATA 256,0,FIB
+       BLWP @VMBR        PUT Back name into fib
+       DATA MCL*5+14
+       DATA FIB+224
+       DATA 20
+       CLR  @FIBTOT      Clear total fibs on disk
+       BL   @DUPMEM      Clear out Files start sector table
+       DATA 254,0,FIBS
+       LI   R0,FIB
+       MOV  R0,@FIBLOC   SET TO START OF FIB TO SAVE FIBS
+       CLR  @NXTFIB      Reset next FIB pointer
+       DEC  @GOODSC      Male this the last sector # on disk
+       MOV  @BAKCNT,R3   Display # of disks in backup
+       CLR  @DFULL       Reset disk full flag
+       BLWP @H2DM
+       DATA DTEXT
+       BLWP @VMBW
+       DATA MCL*7+18
+       DATA DTEXT
+       DATA 4
+       RTWP
+*
+BADERR BL   @CLRLN       Remove verify message
+       DATA MCL*18,1
+       BL   @STERR
+       DATA DUMP1        ERROR ON DISK
+       DATA 29
+       BLWP @HONK
+       BL   @GETKYC
+       BL   @SOLID
+       BLWP @VMBW        Ask for a new disk
+       DATA MCL*18+1
+       DATA NEWD
+       DATA 26
+       MOV  R10,R1       Get # of drive in error
+       AI   R1,>3000
+       LI   R0,MCL*18+27 Display #
+       BLWP @VSBW
+       BL   @GETKYC      Wait for 'c'
+       BL   @CLRLN
+       DATA MCL*17,2
+       B    @BACK3       Start over
+*
+**************************
+* Used by restore to setup extra disk drives
+**************************
+*
+ASKDK  DATA WS1,ASKDK1
+*
+ASKDK1 MOV  @DRTOT,R6    Total drives
+       MOV  @ACTDR,R7    Active drive
+       MOV  @DNTG,R3     # of disks done
+       MOV  @RSTTOT,R4   Total disks in set
+       MOV  @DRRD,R10    # of current drive
+       MOV  R10,R5
+       C    R6,R7        More 1 drive available
+       JEQ  ASKO1        No, Use same drive #
+ASKLP  MOVB @FDRS(R7),R5 Get the # of drive
+ASKO1  INC  R3           Next # of backup in set
+       BLWP @H2DM        Convert it to decimal
+       DATA DTEXT
+       CLR  @SSEC        Get 1st sector of this drive
+       BLWP @BEEP
+       JMP  ASKAGN
+ASKAGH BLWP @HONK
+ASKAGN BLWP @VMBW        Display prompt
+       DATA MCL*18+1
+       DATA MDSKM        PUT DISK
+       DATA 8
+       LI   R2,4         Max of 4 bytes to display
+       LI   R8,DTEXT
+       LI   R0,MCL*18+10
+ASKDK2 MOVB *R8+,R1
+       BLWP @VSBW
+       INC  R0
+       DEC  R2           Done 4 bytes
+       JEQ  ASKDK3       Yes
+       CB   R1,@SPACE    Write a space
+       JNE  ASKDK2
+       JMP  ASKDK4
+ASKDK3 MOVB @SPACE,R1    If 4 written need a space
+       BLWP @VSBW
+       INC  R0
+ASKDK4 MOV  R0,@ASKDKD   Start position for reset of message
+       BLWP @VMBW
+ASKDKD DATA 0
+       DATA MDSKM1
+       DATA 10
+       AI   R0,10
+       MOVB R5,R1
+       AI   R1,>3000
+       BLWP @VSBW
+       BL   @GETKYC      Wait for 'c' key
+       BL   @CLRLN
+       DATA MCL*18,1
+       MOVB R5,@DRRD     Make this the drive to read
+       BL   @GETSEC
+       DATA WBUF1
+       DATA DRRD
+       JMP  ASKAGH
+       LI   R0,WBUF1     Test if this is the correct disk name
+       LI   R1,BACKN
+       LI   R2,6
+ASKDKL CB   *R0+,*R1+    Correct
+       JNE  ASKAGH       No ask again
+       DEC  R2
+       JNE  ASKDKL
+       LI   R1,DTEXT     Now test backup #
+       LI   R2,4
+AKDKL1 CB   *R0+,*R1+
+       JNE  ASKAGH
+       DEC  R2
+       JNE  AKDKL1
+       INC  R7           Next disk
+       CI   R6,1         Only 1 drive available
+       JEQ  ASKDK5       Yes done
+       C    R6,R7        Done all availble
+       JEQ  ASKDK5       Yes
+       C    R3,R4        Test if all done
+       JEQ  ASKDK5       Will be all done with restore no more needed
+       JMP  ASKLP        Get it setup
+ASKDK5 MOV  R10,@DRRD    Restore drive # from entry
+       RTWP
+ABTAR  B    @ABORTF
+*
+       JMP  ASKLP        Get it setup
+ASKDK5 MOV  R10,@DRRD    Restore drive # from entry
+       RTWP
+ABTAR  B    @ABORTF
+*

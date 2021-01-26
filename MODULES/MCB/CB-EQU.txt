@@ -1,0 +1,88 @@
+       TITL 'MYARC HDCC COMPLETE BAK/RESTORE V1.0   5-23-88'
+       IDT  'BCR V1.0'
+       DEF  SFIRST,SLOAD,SLAST
+*
+       DORG >2000
+*********************************************************************
+* Parameter List passed by MDM5
+*
+SPAU   DATA 2            Sector per AU
+WDS    BYTE 1            WDS Drive #
+FDRS   BYTE 0,0,0,0      floppys to use in process (01-08 00 terminate)
+       BYTE 0,0,0,0
+BUTYP  BYTE 0            Backup or Restore Type (00-Selective)
+BR     BYTE 0            Restore/Backup/Catalog op (0,1,2 FF=BACK W/CAT)
+DR1    BYTE 0,0,0        Default list for floppies Drive 1
+DR2    BYTE 0,0,0
+DR3    BYTE 0,0,0
+DR4    BYTE 0,0,0
+DR5    BYTE 0,0,0
+DR6    BYTE 0,0,0
+DR7    BYTE 0,0,0
+DR8    BYTE 0,0,0
+RACT   BYTE 0            The action taken on protected files for restore
+*                        (00-Auto overide 01-Prompted 02-Skip)
+BACKN  BSS  6            CREATed date of backup
+BACK#  BSS  4            Decimal Backup disk number (Not passed)
+WDSCRU BSS  2            CRU Base for HDCC passed by MDM5
+PONTRS BSS  4            POINTERS TO PRINTER NAME AND RELOAD PATH
+* FDR LIST PASSED AT >2100 IS IGNORED
+*********************************************************************
+*
+MAINWS EQU  >8382        MAIN WORKSPACE/Input
+WS2    EQU  >83A2        WS for output
+FILOUT EQU  WS2+6        R3 of WS2 of count of total output files
+*
+WBUF1  EQU  >A000        2nd CPU sector buffer
+FIB    EQU  >A100        FIB sector for active disk
+WBUF2  EQU  >FD00        RESTORE SET PATH BUFFER 1
+WBUF3  EQU  >FE00        RESTORE SET PATH BUFFER 2
+SEC0   EQU  FIB          SECTOR 0 OF OUTPUT DISK IMAGE
+PATHL  EQU  FIB+183      LENGTH OF PATH
+PATHS  EQU  FIB+184      FILE PATH
+WS3    EQU  >A200        Table of pointer for FIB sectors 254 BYTES
+WS4    EQU  WS3+32
+WS5    EQU  WS4+32       PRINT OUT WS
+PTYPE  EQU  >A300        PRINTER TYPE NAME 40 BYTES
+FCBP   EQU  >A400
+WS1    EQU  PTYPE+40     WS for drive setup
+*
+************************** 50 BYTES USED BELOW ************************
+SSEC   EQU  WS1+32       CURRENT SECTOR #                              *
+CLR#   EQU  SSEC+2       # OF LINES TO CLEAR                           *
+BSEC   EQU  CLR#+2       Backup diskette sector #                      *
+ACTDR  EQU  BSEC+2        ACTIVE DRIVE #                               *
+DRTOT  EQU  ACTDR+2      TOTAL # OF ACTIVE DRIVES                      *
+DNTG   EQU  DRTOT+2      Number of disks restored                      *
+DONEP  EQU  DNTG+2       SECTOR # of active directory                  *
+TOTFSC EQU  DONEP+2      Total # of sectors on active floppy           *
+FIBLOC EQU  TOTFSC+2     Location in FIB to store file info            *
+MXAU   EQU  FIBLOC+2     Maximum room available to store a sector      *
+MPOINT EQU  MXAU+2       Memory pointer to move data to                *
+* DO NOT SEPARATE THE NEXT 3 EQUATES         ***********************
+DIRTOT EQU  MPOINT+2     TOTAL dirs in backup
+FILTOT EQU  DIRTOT+2     Total # of files in backup set                *
+BAKCNT EQU  FILTOT+2     HEX # OF CURRENT BACKUP 1-9999 OR TOTAL TO REST
+RSTTOT EQU  BAKCNT+2     TOTAL # OF DISKS TO RESTORE
+NXTOUT EQU  RSTTOT+2     Memory List of file names                     *
+PGCNT  EQU  NXTOUT+2     COUNT of page # for printout                  *
+SVRTNP EQU  PGCNT+2      PRINT routine                                 *
+BD1IN  EQU  SVRTNP+2     FLAG THAT 1ST DISK IS NOT AVAILABLE           *
+PLINE  EQU  BD1IN+2      LINE # of print out                           *
+NXTFIB EQU  PLINE+2      Next FIB to be written                        *
+PROCNT EQU  NXTFIB+2     Count of protected files                      *
+DFULL  EQU  PROCNT+2      Disk full flag                               *
+DONE   EQU  DFULL+2      Operation complete                            *
+GOODSC EQU  DONE+2       Total # of good sectors on active diskette    *
+FIBTOT EQU  GOODSC+2     Total # of FIBs on disk                       *
+ERRSV  EQU  FIBTOT+2
+************************************************************************
+SRBUF  EQU  ERRSV+2      102 BYTES FOR PATH SEARCH
+* ABOVE NEEDS 102 BYTES ************************
+CRTPN  EQU  SRBUF+50
+WIONAM EQU  SRBUF+102    WDS I/O NAME 10 BYTES
+DTEXT  EQU  WIONAM+10    6 BYTES FOR HEX TO DECIMAL CONVERSION
+PATMDM EQU  >FFD0        LENGTh and path for MDM5 reload  MAX 40
+*
+       AORG PONTRS+4      Start of pgm
+*

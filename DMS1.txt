@@ -1,0 +1,87 @@
+       UNL
+* MYARC Disk Manager V (MDM5)
+*
+* Disk Manager III written by David Woods.
+* Disk Manager V upgrade written by Mike Dodd.
+* Final version of Disk Manager V by John Birdwell
+*
+* 95% of comments written by Mike Dodd, including these.
+*
+* Thanks to J. Peter Hoddie and D.R. Fudge for moral support. Without
+* them, I'd go crazy.
+*
+       DEF  GO,DMEND,DMDATA
+       DEF  FCBASE,THEEND
+       AORG >A000
+       B    @GO               start of program
+       TITL 'Program defaults'
+       PAGE
+       COPY "DSK1.DM.DEFAULTS"
+       TITL 'RAMdisk setup routine'
+       PAGE
+       COPY "DSK1.DM.RAMDISK"
+       TITL 'Repeating keyboard scanning routine'
+       PAGE
+       COPY "DSK1.DM.KBSCAN"
+       TITL 'Start and General purpose subs'
+       PAGE
+       COPY "DSK1.DM.TST1"
+       TITL 'ASCII <---> Binary conversion routines'
+       PAGE
+       COPY "DSK1.DM.CONVERT"
+       TITL 'Disk maintenance routines'
+       PAGE
+       COPY "DSK1.DM.DISKMAIN"
+       TITL 'Disk operation execution'
+       PAGE
+       COPY "DSK1.DM.EXECOP"
+       TITL 'Disk system tests'
+       PAGE
+       COPY "DSK1.DM.SYSTESTS"
+       TITL 'Disk initialization'
+       PAGE
+       COPY "DSK1.DM.FORMAT"
+       TITL 'Winchester format setup'
+       PAGE
+       COPY "DSK1.DM.FORMATWIN"
+       TITL 'Set program defaults'
+       PAGE
+       COPY "DSK1.DM.SETDEFAULT"
+       TITL 'Sector copy routine'
+       PAGE
+       COPY "DSK1.DM.CLONE"
+       TITL 'File search routine'
+       PAGE
+       COPY "DSK1.DM.SEARCH"
+       TITL 'DSK1 emulation selection'
+       PAGE
+       COPY "DSK1.DM.DSKEMU"
+       TITL 'Print Hard disk directory tree'
+       PAGE
+       COPY "DSK1.DM.PRTTREE"
+       TITL 'PRTLNK routine (DSRLNK)'
+       PAGE
+       COPY "DSK1.DM.PRTLNK1"
+       TITL '80 track check'
+       PAGE
+       COPY "DSK1.DM.80TK"
+       TITL 'Get drive number & subdirectory'
+       PAGE
+       COPY "DSK1.DM.GETDRV"
+       TITL 'Directory operations'
+       PAGE
+       COPY "DSK1.DM.DIR1"
+       TITL 'System initialization'
+       PAGE
+       EVEN
+FCBASE EQU  $
+       COPY "DSK1.DM.SETUP"
+       TITL 'PROGRAM DATA'
+       PAGE
+DMDATA EQU  $
+       AORG >2000
+       COPY "DSK1.DM.DATADORG"
+       TITL 'System buffers'
+       PAGE
+DMEND  COPY "DSK1.DM.BUFFERS"
+THEEND END

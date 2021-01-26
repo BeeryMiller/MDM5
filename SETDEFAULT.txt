@@ -1,0 +1,380 @@
+*** MODULE NAME - SETDEFAULT ***
+***
+*
+* B   @DEFALT - DISPLAY SYSTEM DEFAULT VALUES AND ALLOW
+* USER TO CHANGE THEM.
+*
+* NO PARAMETERS
+*
+***
+*
+DEFALT MOV  R11,@SAVRT
+       BL   @CLTOP
+       BL   @SCRGEN      *CREATE THE SCREEN
+       DATA DEFTXT,DEFADR,6
+* Now do the 8 drives
+       LI   R5,>3100
+       LI   R4,8
+       LI   R3,SCRWID*6+3     display address
+DEFDVL MOVB R5,@DEFDR+8       Drive # odd
+       AI   R5,>0100
+       MOVB R5,@DEFDR+26      Drive # even
+       MOV  R3,@DEFDL         set address
+       BL   @SHOW$1
+       DATA DEFDR             Text
+DEFDL  DATA 0                 Line
+       AI   R3,SCRWID*2       Next line
+       AI   R5,>0100          Next drive
+       DECT R4                Done all 8
+       JNE  DEFDVL            no
+*
+       BL   @VDPFIL
+       DATA SCRWID,SCRWID,>1400
+*
+*PUT THE CURRENT VALUES IN FOR EACH DRIVE
+       LI   R2,MATRIX
+       LI   R3,MAINDR
+DEFLP2 MOV  *R2+,R1
+       MOVB *R3+,R0
+       BL   @VSBW
+       CI   R2,MATEND
+       JLE  DEFLP2
+* NOW TEST IF there is a RAMDISK ON 9640
+DEFDL9 BL   @SHOW$1                          output device
+       DATA OUTPUT,15*SCRWID+01
+       BL   @VDPFIL
+       DATA 16*SCRWID,SCRWID,>1400           line
+       BL   @SHOW$1
+       DATA MDRLPT,18*SCRWID+01              reload path
+       BL   @VDPFIL
+       DATA 19*SCRWID,SCRWID,>1400           line
+*
+*GET THE CURRENT COLORS AND DISPLAY
+       MOVB @DCOLOR,R0
+       SRL  R0,8
+       MOV  R0,R7
+       ANDI R0,>000F
+       SRL  R7,4
+       INC  R0   *MAKE IT BASE 1
+       INC  R7
+       LI   R2,C$+1  *CONVERT THE COLOR VALUES TO STRINGS AND DISPLAY
+       BL   @CNVNM
+       BL   @SHOW$2
+       DATA 20*SCRWID+21
+       LI   R2,C$+1
+       MOV  R7,R0
+       BL   @CNVNM
+       BL   @SHOW$2
+       DATA 20*SCRWID+37
+*
+*SHOW THE COMMAND LINE AND ACCEPT COMMAND
+       BL   @COM6
+DEFLP1 BL   @COMNB
+       DATA DEFLST
+       JMP  DEFLP1
+*
+DEFEDI MOV  R11,@SAVRT2
+       LI   R2,MATRIX
+DEFRT4 MOV  *R2,R1
+       CI   R2,DRVEND         on default drive numbers?
+       JHE  DEF5              no, past that
+       CI   R2,MATR1          ON SINGLE DRIVES
+       JHE  DEFSG             YES
+       BL   @COMB
+       DATA DEFLS3
+*
+DEFSG  BL   @COMB             GET Y/N
+       DATA DEFLS4
+*
+DOWNS  INCT R2
+       CI   R2,MATR1+2         GOING DOWN FROM FLOPPY DR?
+       JEQ  DOWNS1            YES
+       INCT R2                MUST BE FROM HARD SO GO TO DR#2 SIDES
+       INCT R2
+       LI   R11,2             SET ON DRIVE 2
+       MOV  R11,@TOTERR
+       SETO @NQFLAG           SET ON SIDES
+       JMP  DEFRT4
+DOWNS1 INCT R2                GET TO START OF DRIVES
+       JMP  DEFRT4
+*
+DEF5   CI   R2,MATEND         in drive matrix?
+       JLE  DEFRT2            yes
+       CI   R2,MATEND+2
+       JEQ  DEF6              get printer name, then
+*   must be matend+4 - get pathname for mdm5 reload
+       LI   R0,18*SCRWID+1    screen address
+       LI   R1,MDRLPT         cpu addr
+       BLWP @INPUT
+       DATA 39,>2020
+       JNC  DEFRT3            escape key not used - exit out
+       CI   R0,>8B00          up arrow?
+       JNE  DEFRT3            no - exit
+       DECT R2                back up
+       JMP  DEFRT4            continue
+DEF6   LI   R0,15*SCRWID+1
+       LI   R1,OUTPUT
+       BLWP @INPUT
+       DATA 39,>2020
+       JNC  DEF7              not an exit key - go to next line
+       CI   R0,>8A00          down arrow?
+       JEQ  DEF7              yes
+       CI   R0,>8B00          up arrow?
+       JNE  DEFRT3            no
+       LI   R2,MATEND         at end of drive matrix
+       CLR  @NQFLAG           SET ON DENSITY
+       LI   R11,8             SET ON DRIVE 8
+       MOV  R11,@TOTERR
+       JMP  DEFRT4
+DEF7   INCT R2
+DEFRTJ JMP  DEFRT4
+DEFRT2 CI   R2,DRVEND         at the 1st drive prompt
+       JNE  TSTRDN            test if on a rd
+       LI   R11,1             set on drive 1
+DEFDN2 MOV  R11,@TOTERR       convient location
+       SETO @NQFLAG           set to getting sides prompt
+TSTRDN BL   @COMB
+       DATA DEFLS2
+DEFRT3 BLWP @BEEP
+       LI   R2,MATRIX
+       LI   R3,MAINDR
+DEFLP4 MOV  *R2+,R1
+       BL   @VSBR
+       MOVB R0,*R3+
+       CI   R2,MATEND
+       JLE  DEFLP4
+       MOVB @MAINDR,R1
+       SRL  R1,8
+       AI   R1,->30
+       MOV  R1,@MAIND
+       MOVB @COPYDR,R1
+       SRL  R1,8
+       AI   R1,->30
+       MOV  R1,@COPYD
+       MOV  @SAVRT2,R11
+       B    *R11
+*
+RIGHT2 INCT R2
+       JMP  DEFRTJ
+*
+RIGHTD INCT R2
+       INC  @NQFLAG
+       JEQ  DEFRTJ
+       INC  @TOTERR
+       SETO @NQFLAG
+       JMP  DEFRTJ
+*
+LEFT3  CI   R2,MATRIX
+       JEQ  DEFRTJ
+       DECT R2
+       JMP  DEFRTJ
+*
+LEFTD  DECT R2
+       MOV  @NQFLAG,R11                      ON DENSITY
+       JNE  LEFTD1                           NO ON SIDES
+       DEC  @NQFLAG                          SET ON SIDES
+       JMP  DEFRTJ
+LEFTD1 CLR  @NQFLAG                          SET ON DENSITY
+       DEC  @TOTERR                          BACK A DRIVE
+       JMP  DEFRTJ
+*
+UP2    CI   R2,MATRIX+2
+       JLE  DEFRTJ
+       AI   R2,-4
+       JMP  DEFRTJ
+*
+UPD    CI   R2,DRVEND+6  ON TOP DRIVE LINE
+       JHE  UPD1
+       CI   R2,DRVEND
+       JEQ  $+4
+       DECT R2
+       DECT R2
+       DECT R2
+       JMP  DEFRTJ
+UPD1   AI   R2,-8
+       DECT @TOTERR
+DEFRJ  JMP  DEFRTJ
+*
+DOWN2  CI   R2,MATEND         at very end of drive matrix?
+       JEQ  $+4               yes - skip first INCT
+       INCT R2
+       INCT R2
+       JMP  DEFRTJ
+*
+DOWND  CI   R2,MAT7           ON DRIVE 7
+       JNE  DOWND7
+       INCT R2
+DOWND3 INCT R2
+       INCT R2
+       INCT R2
+       JMP  DEFRJ
+DOWND7 CI   R2,MAT7+2
+       JEQ  DOWND3
+       CI   R2,MATEND-2
+       JEQ  DOWND3+2
+       CI   R2,MATEND
+       JEQ  DOWND3+4
+       AI   R2,8
+       INCT @TOTERR
+       JMP  DEFRJ
+*
+BACKC  MOV  R11,R12
+       BL   @CHGCOL
+       DATA >0100,>0FF0
+       INC  R0
+       LI   R2,C$+1
+       BL   @CNVNM
+       BL   @SHOW$2
+       DATA 20*SCRWID+21
+       JMP  SETC
+*
+FOREC  MOV  R11,R12
+       BL   @CHGCOL
+       DATA >1000,>F00F
+       SRL  R0,4
+       INC  R0
+       LI   R2,C$+1
+       BL   @CNVNM
+       BL   @SHOW$2
+       DATA 20*SCRWID+37
+SETC   MOVB @H20,*R8
+       BL   @SETCOL
+       B    *R12
+*
+CHGCOL LI   R1,DCOLOR
+       MOVB *R1,R0
+       A    *R11+,R0
+       SZCB *R11+,*R1
+       SZCB *R11+,R0
+       SOCB R0,*R1
+       SRL  R0,8
+       B    *R11
+*
+DEFSAV BLWP @GETDRV
+       DATA >0000             main disk
+DEFSLP LI   R4,S1BUFF
+       LI   R5,DMNAME
+       BL   @DBS
+       JEQ  DMFND
+       BL   @SHOW$1
+       DATA SAVTXT,ERLN#*SCRWID
+       BLWP @HONK
+       BL   @CONABO
+       JMP  DEFSAV
+DMFND  ABS  @HRDS             hard drive?
+       JNE  DMSVH1
+       LI   R7,CPYBUF+CLUSTR
+       BL   @DECODE
+       MOV  R3,R0
+       LI   R1,GENBUF
+       BLWP @RSCPU
+       DATA DMFND
+       LI   R4,>A004          past b @go statement - don't want to save that
+       LI   R5,GENBUF+>16+16  past header
+DMFLP  MOV  *R4+,*R5+
+       CI   R4,DEFEND
+       JLE  DMFLP
+DMFERR BLWP @WSCPU
+       DATA DMFERR
+       JMP  TSTBTH            test if both MDM5 & MDMV have been done
+DMSVH1 MOV  @CPYBUF+>28,R0    get starting au number
+       LI   R1,GENBUF
+       BLWP @RSHRD
+       DATA DMSVH1
+       LI   R4,>A004          past b @go statement - don't want to save that
+       LI   R5,GENBUF+>16+16  past header
+DMSVH2 MOV  *R4+,*R5+
+       CI   R4,DEFEND
+       JLE  DMSVH2
+       MPY  @SECAUS,R0        get full sector number
+       MOV  R0,@MSSEC
+       MOV  R1,R0
+       LI   R1,GENBUF
+DMSVH3 BLWP @WSHRD
+       DATA DMSVH3
+TSTBTH ABS  @C9640            IS THIS A 4A
+       JEQ  TSTBT1            YES DON'T DO MDMV
+       CB   @DMNAME+3,@FTXT+1 NAME AT MDMV NOW
+       JEQ  $+10              YES MAKE IT BACK TO MDM5 AND LEAVE
+       MOVB @FTXT+1,@DMNAME+3 MAKE NAME MDMV & change its defaults
+       JMP  DEFSLP
+       MOVB @H35,@DMNAME+3    reset name to MDM5
+TSTBT1 B    @LEV0RT
+       LI   R2,C$+1
+       BL   @CNVNM
+       BL   @SHOW$2
+       DATA 20*SCRWID+21
+       JMP  SETC
+*
+FOREC  MOV  R11,R12
+       BL   @CHGCOL
+       DATA >1000,>F00F
+       SRL  R0,4
+       INC  R0
+       LI   R2,C$+1
+       BL   @CNVNM
+       BL   @SHOW$2
+       DATA 20*SCRWID+37
+SETC   MOVB @H20,*R8
+       BL   @SETCOL
+       B    *R12
+*
+CHGCOL LI   R1,DCOLOR
+       MOVB *R1,R0
+       A    *R11+,R0
+       SZCB *R11+,*R1
+       SZCB *R11+,R0
+       SOCB R0,*R1
+       SRL  R0,8
+       B    *R11
+*
+DEFSAV BLWP @GETDRV
+       DATA >0000             main disk
+DEFSLP LI   R4,S1BUFF
+       LI   R5,DMNAME
+       BL   @DBS
+       JEQ  DMFND
+       BL   @SHOW$1
+       DATA SAVTXT,ERLN#*SCRWID
+       BLWP @HONK
+       BL   @CONABO
+       JMP  DEFSAV
+DMFND  ABS  @HRDS             hard drive?
+       JNE  DMSVH1
+       LI   R7,CPYBUF+CLUSTR
+       BL   @DECODE
+       MOV  R3,R0
+       LI   R1,GENBUF
+       BLWP @RSCPU
+       DATA DMFND
+       LI   R4,>A004          past b @go statement - don't want to save that
+       LI   R5,GENBUF+>16     past header
+DMFLP  MOV  *R4+,*R5+
+       CI   R4,DEFEND
+       JLE  DMFLP
+DMFERR BLWP @WSCPU
+       DATA DMFERR
+       JMP  TSTBTH            test if both MDM5 & MDMV have been done
+DMSVH1 MOV  @CPYBUF+>28,R0    get starting au number
+       LI   R1,GENBUF
+       BLWP @RSHRD
+       DATA DMSVH1
+       LI   R4,>A004          past b @go statement - don't want to save that
+       LI   R5,GENBUF+>16+14  past header
+DMSVH2 MOV  *R4+,*R5+
+       CI   R4,DEFEND
+       JLE  DMSVH2
+       MPY  @SECAUS,R0        get full sector number
+       MOV  R0,@MSSEC
+       MOV  R1,R0
+       LI   R1,GENBUF
+DMSVH3 BLWP @WSHRD
+       DATA DMSVH3
+TSTBTH ABS  @C9640            IS THIS A 4A
+       JEQ  TSTBT1            YES DON'T DO MDMV
+       CB   @DMNAME+3,@FTXT+1 NAME AT MDMV NOW
+       JEQ  $+10              YES MAKE IT BACK TO MDM5 AND LEAVE
+       MOVB @FTXT+1,@DMNAME+3 MAKE NAME MDMV & change its defaults
+       JMP  DEFSLP
+       MOVB @H35,@DMNAME+3    reset name to MDM5
+TSTBT1 B    @LEV0RT

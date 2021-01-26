@@ -1,0 +1,68 @@
+*
+* FOR RELOAD OF MDM5 MUST 1ST SEE IF THE PATH IS OTHER THEN DSK1
+*
+REHED  EQU  MAINWS+6     PUT HEADER INFO INTO R3,R4,R5
+*
+RELOAD LWPI MAINWS       MAKE SURE WS WON'T GET OVER WRITTEN
+       CLR  R9           CLEAR MDMV LOAD FLAG
+RELD   BL   @CLRLN       REMOVe any message from line 20
+       DATA MCL*20,1
+       BLWP @VMBW        Move load pab to vdp
+       DATA >0F80
+       DATA RELPAB
+       DATA 19           LOAD dsk1 pab
+       LI   R8,>0F92     LOCATion for mdm5 for dsk1 load
+* Now test if path is other then dsk1
+       MOVB @PATMDM,R1   GET LENGTH OF PATHNAME
+       JEQ  RELOD        IF ZERO DO DSK1 LOAD
+       AI   R1,>0400     ADD In the size of word MDM5
+       LI   R0,>0F89     POINT to length of file name
+       BLWP @VSBW        SET To new length
+       LI   R0,>0F8A     NOW Move it to vdp
+       LI   R3,PATMDM
+       MOVB *R3+,R2      GET Length to move
+       SRL  R2,8
+MDMMOV MOVB *R3+,R1      GET A byte
+       BLWP @VSBW        WRITE
+       INC  R0
+       DEC  R2
+       JNE  MDMMOV       IF NOt zero continue
+       MOV  R0,@MDMMVD
+       BLWP @VMBW
+MDMMVD DATA 0            LOCATion to put MDM5
+       DATA RELPB1+5
+       DATA 4
+       AI   R0,3         POINT to last character in MDM5
+       MOV  R0,R8        SAVE its location
+RELOD
+RELOD1 LI   R1,>0F89
+       MOV  R1,@>8356
+       BLWP @DSRLNK
+       DATA 8
+       JNE  RELOD2       Any error bad
+NOLOAD BL   @STERR       TELL user of load failure
+       DATA REFAIL
+       DATA 10
+       BLWP @HONK
+       B    @EXTERR      Go to ask about exit
+RELOD2 BLWP @VMBR
+       DATA >1000        Get file header info
+       DATA REHED
+       DATA 6
+RELOD3 MOV  R3,R3        GOT A NULL HEADER
+       JEQ  RELOD4       YES GOT CORRECT VERSION OF MDM5
+       MOVB @VAR,@RELPB1+8   TRY MDMV
+       MOV  R9,R9             TRIED ALREADY
+       JNE  NOLOAD            YES
+       SETO R9           SET MDMV FLAG
+       B    @RELD        TRY AGAIN
+RELOD4 MOV  R4,@RELD2     Length to move
+       MOV  R5,@RELD1    START LOAD/RETRY POINT
+       BLWP @VMBR
+       DATA >1006
+RELD1  DATA 0
+RELD2  DATA 0
+SLAST  B    *R5          Begin execution
+*
+WBUF2  BSS  256
+WBUF3  BSS  256

@@ -1,0 +1,446 @@
+* Loader for MDM5.
+*   by Mike Dodd.
+*   loads MDM6/7/8 into high memory. loads mdm9 into low memory
+       AORG >F700             way up there
+       DEF  SFIRST,SLOAD,SLAST
+OFFSET EQU  >F700->E000
+SFIRST
+SLOAD  B    @START
+       DATA >0000             power up vector
+       DATA GRMHED-OFFSET     grom header
+       DATA 0,0,0,0           rest of header
+PDATA  DATA >0500,VBUF,0,>2001
+       BYTE >00
+FNAMTX TEXT 'MDM60'
+LASTCH BYTE >00
+H36    BYTE >36
+*   start of default values
+DEFLTS TEXT '1'
+       TEXT '2'
+       TEXT 'N'               ADDED SINGLE FLOPPY
+       TEXT 'Y'               ADDED SINGLE HARD
+       BYTE 'D'
+       BYTE 'D'
+       BYTE 'D'
+       BYTE 'D'
+       BYTE 'D'
+       BYTE 'D'
+       BYTE 'D'
+       BYTE 'D'
+       TEXT 'DDDDDDDDSS'
+       BYTE 0  *WORD BOUND
+       BYTE 49
+       BYTE 3,>16
+       BYTE >05,>00
+       BYTE 80
+       BYTE 0,0,0,0
+       BYTE 3
+       TEXT 'PIO                                    '
+PATH   BYTE >05
+       TEXT 'DSK1.                                  '
+DCOLOR DATA >F487
+       DATA 1
+       DATA 2
+       DATA 4
+       DATA 5
+       DATA 5
+       DATA 0
+       DATA 0
+       DATA 0
+       DATA 0
+DEFEND
+GRMHED DATA >0000             next application program - none
+       DATA GRMPRG-OFFSET     grom program
+       BYTE 20                length
+       TEXT 'MYARC DISK MANAGER V'
+       EVEN                   so DATA START is on even boundary
+GRMPRG
+*      MOVE >08F8,G@>E000,@>F700    LENGTH OF DATA TO MOVE, FROM, TO
+       BYTE >31,>08,>F8,>8F,>74,>00,>E0,>00
+*      DST  START,@>8300            MOVE MDM5 START ADDRESS TO >8300
+       BYTE >BF,>00
+       DATA START
+*      XML  >F0                     EXECUTE ASSEMBLY PRGM AT >8300
+       BYTE >0F,>F0
+H01    BYTE >01
+*
+VWA    EQU  >8C02
+VWD    EQU  >8C00
+VRD    EQU  >8800
+SCRWID EQU  40
+PAB    EQU  >1000
+VBUF   EQU  >1100
+*
+       EVEN
+CHAPAT EQU  $
+ DATA >FFFF,>FFFF,>FFFF,>FFFF >00 - Solid
+ DATA >0000,>001C,>1C1C,>1C18 >01
+ DATA >0000,>00FF,>FFFF,>FF00 >02
+ DATA >0000,>0000,>80C0,>E000 >03
+ DATA >1818,>1818,>1818,>1818 >04
+ DATA >0C04,>0000,>0004,>0C1C >05
+ DATA >00FF,>3C7C,>FCF8,>F0E0 >06
+ DATA >00F0,>C080,>0000,>0000 >07
+ DATA >1C1C,>1C18,>1000,>0000 >08
+ DATA >C080,>0000,>0000,>0000 >09
+ DATA >FFFF,>3C3C,>3C3C,>3C3C >0A
+ DATA >3C3C,>3C3C,>3C3C,>3C3C >0B
+ DATA >3C3C,>3C3C,>3C3C,>FFFF >0C
+ DATA >C0C0,>FCFC,>FCFC,>FCFC >0D
+ DATA >007C,>7C7C,>7C7C,>7C7C >0E
+ DATA >7C7C,>7C7C,>7C7C,>7C00 >0F
+ DATA >00FF,>FFFF,>FFFF,>FFFF >10
+ DATA >FFFF,>FFFF,>FFFF,>FF00 >11
+ DATA >7F7F,>7F7F,>7F7F,>7F7F >12
+*DATA >3048,>B4C4,>C4B4,>4830 >13 - Copyright logo
+ DATA >0078,>84B4,>A4B4,>8478 >13 - Copyright logo
+ DATA >0000,>0000,>FF00,>0000 >14
+ DATA >0078,>7878,>7878,>7800 >15
+ DATA >FC20,>2020,>1008,>04FC >16 - first half of roman V
+ DATA >F820,>2020,>4080,>00F8 >17 - second half of roman V
+ BSS  64                      >18->1F
+*
+****** BEGINNING OF PRINTABLE CHARACTERS *******
+*
+ DATA >0000,>0000,>0000,>0000 >20 - Space
+ DATA >1010,>1010,>1000,>1000,>2828,>2800,>0000,>0000 >21,22
+ DATA >2828,>7C28,>7C28,>2800,>103C,>5038,>1478,>1000 >23,34
+ DATA >6464,>0810,>204E,>4E00,>0020,>5020,>5448,>3400 >25,26
+ DATA >0004,>0810,>0000,>0000,>0810,>2020,>2010,>0800 >27,28
+ DATA >1008,>0404,>0408,>1000                         >29
+ DATA >0010,>5438,>5410,>0000,>0010,>107C,>1010,>0000 >2A,2B
+ DATA >0000,>0000,>0010,>1020,>0000,>007C,>0000,>0000 >2C,2D
+ DATA >0000,>0000,>0010,>1000,>0404,>0810,>2040,>4000 >2E,2F
+ DATA >0038,>4C54,>6444,>3800,>0010,>3010,>1010,>3800 >30,31
+ DATA >0038,>440C,>3040,>7C00                         >32
+ DATA >0038,>0418,>0444,>3800,>0018,>2848,>7C08,>0800 >33,34
+ DATA >007C,>4078,>0444,>3800,>001C,>2078,>4444,>3800,>007C
+ DATA >4408,>1020,>2000,>0038,>4438,>4444,>3800,>0038,>4444
+ DATA >3808,>7000,>0000,>1000,>0010,>0000,>0000,>1000,>1010
+ DATA >2000,>0810,>2040,>2010,>0800,>0000,>7C00,>7C00,>0000
+ DATA >2010,>0804,>0810,>2000,>3844,>0408,>1000,>1000,>0038
+ DATA >4454,>5C40,>3C00,>0038,>447C,>4444,>4400,>0078,>4478
+ DATA >4444,>7800,>0038,>4440,>4044,>3800,>0070,>4844,>4448
+ DATA >7000,>007C,>4078,>4040,>7C00,>007C,>4078,>4040,>4000
+ DATA >0038,>4440,>4C44,>3C00,>0044,>447C,>4444,>4400,>0038
+ DATA >1010,>1010,>3800,>001C,>0808,>0848,>3000,>0048,>5060
+ DATA >5048,>4400,>0040,>4040,>4040,>7C00,>0044,>6C54,>5444
+ DATA >4400,>0044,>6464,>544C,>4400,>0038,>4444,>4444,>3800
+ DATA >0078,>4444,>7840,>4000,>0038,>4444,>5448,>3400,>0078
+ DATA >4444,>7848,>4400,>003C,>4038,>0404,>7800,>007C,>1010
+ DATA >1010,>1000,>0044,>4444,>4444,>3800,>0044,>4428,>2810
+ DATA >1000,>0044,>4454,>5454,>2800,>0044,>2810,>2844,>4400
+ DATA >0044,>2810,>1010,>1000,>007C,>0408,>1020,>7C00,>3820
+ DATA >2020,>2020,>3800,>4040,>2010,>0804,>0400,>3808,>0808
+ DATA >0808,>3800,>1028,>4410,>1010,>1000,>0000,>0000,>0000
+ DATA >7C00,>0020,>1008,>0000,>0000,>0000,>3008,>3848,>3400
+ DATA >0040,>4078,>4444,>7800,>0000,>3844,>4044,>3800,>0004
+ DATA >043C,>4444,>3800,>0000,>3844,>7C40,>3C00,>0008,>1010
+ DATA >3810,>1000,>0000,>3844,>443C,>0438,>0040,>4058,>6444
+ DATA >4400,>0010,>0030,>1010,>3800,>0008,>0018,>0808,>4830
+ DATA >0040,>4050,>6050,>4800,>0010,>1010,>1010,>1800,>0000
+ DATA >2854,>5454,>4400,>0000,>5864,>4444,>4400,>0000,>3844
+ DATA >4444,>3800,>0000,>7844,>4478,>4040,>0000,>3844,>443C
+ DATA >0404,>0000,>5864,>4040,>4000,>0000,>3840,>3804,>7800
+ DATA >0010,>3810,>1010,>0800,>0000,>4848,>4848,>3400,>0000
+ DATA >4444,>4428,>1000,>0000,>4454,>5454,>2800,>0000,>4428
+ DATA >1028,>4400,>0000,>4444,>241C,>0438,>0000,>7C08,>1020
+ DATA >7C00,>0810,>1020,>1010,>0800,>1010,>1000,>1010,>1000
+ DATA >2010,>1008,>1010,>2000,>0000,>2054,>0800,>0000,>003C
+ DATA >3C3C,>3C3C,>3C00,>0000,>0000,>0000,>0000,>0000
+*
+START  LWPI >8300
+       LI   R0,>B081
+       MOVB R0,@>83D4
+       SWPB R0
+       BL   @READV
+       BL   @VDPFIL
+       DATA 0,960,>2000
+       MOV  @DCOLOR,R0
+       SWPB R0
+       BL   @READV
+       LI   R0,>0800
+       LI   R1,CHAPAT
+       LI   R2,>0400
+       BL   @VMBW        *SET UP NORMAL CHARACTER DEFINITIONS
+       LI   R2,>0200     *COUNTER
+       LI   R3,CHAPAT    *CPU ADDRESS
+INVERT INV  *R3          *VDP ADDRESS IS ALREADY SET UP SO SEND
+       MOVB *R3+,@VWD    *IN THE INVERTED CHARACTER DEFINITIONS
+       SWPB R1                Delay
+       MOVB *R3+,@VWD
+       DEC  R2
+       JNE  INVERT
+       BL   @SCRGEN      *BUILD INITIAL ENTRY SCREEN
+       DATA TTXT1,TADDR1,9
+       BL   @SCRGEN           Disk drive graphics
+       DATA DRTXT1,DRADDR,6
+       BL   @VDPFIL
+       DATA >0000,40,>0200  *PUT LINE AT TOP OF SCREEN
+       BL   @LINE1
+       LI   R0,>F081
+       MOVB R0,@>83D4
+       SWPB R0
+       BL   @READV
+       MOVB @H36,@LASTCH
+       LI   R0,PAB
+       LI   R1,PDATA
+       LI   R2,9
+       BL   @VMBW
+       LI   R1,PATH
+       MOVB *R1+,R2
+       MOVB R2,R0
+       AI   R0,>0600          plus 'mdmvv#'  vv=version #= 6-9
+       MOVB R0,@VWD
+       SRL  R2,8
+       LI   R8,PAB+15
+       A    R2,R8             point to final character
+       BL   @VMBW1            write to vdp
+       LI   R1,FNAMTX
+       LI   R2,5
+       BL   @VMBW1
+       LI   R7,>A000
+LD01   MOV  R8,R0
+       BL   @WRITEV
+       MOVB @LASTCH,@VWD
+       AB   @H01,@LASTCH
+       LI   R0,PAB+9
+       MOV  R0,@>8356
+       BLWP @DSRLNK
+       DATA 8
+       JNE  LD02              LOAD OK
+       CLR  @>2000
+       BLWP @>0000
+LD02   LI   R0,VBUF
+       BL   @READV
+       MOV  R7,R1             buffer location
+       LI   R2,>2000
+       CI   R7,>E000          loading into final high memory page?
+       JNE  LD03
+       LI   R2,>1712          MAXIMUM SIZE OF MDMxx8 FILE
+LD03   BL   @VMBR1            read
+       AI   R7,>2000
+       JNE  LD04              didn't wrap
+       LI   R7,>2000          low memory
+       JMP  LD01              keep going
+LD04   CI   R7,>4000          end of all?
+       JNE  LD01              no - keep going
+*  load default values into main program
+       LI   R0,DEFLTS
+       LI   R1,>A004
+LD05   MOV  *R0+,*R1+
+       CI   R0,DEFEND
+       JNE  LD05
+       B    @>A000            start program
+*
+VMBW   MOV  R11,R12
+       BL   @WRITEV
+       MOV  R12,R11
+VMBW1  MOVB *R1+,@VWD
+       DEC  R2
+       JNE  VMBW1
+       RT
+VMBR   MOV  R11,R12
+       BL   @READV
+       MOV  R12,R11
+VMBR1  MOVB @VRD,*R1+
+       DEC  R2
+       JNE  VMBR1
+       RT
+VSBR   MOV  R11,R12
+       BL   @READV
+       MOVB @VRD,R1
+       B    *R12
+WRITEV ORI  R0,>4000
+READV  SWPB R0
+       MOVB R0,@VWA
+       SWPB R0
+       MOVB R0,@VWA
+       RT
+***
+SHOW$1 MOV  *R11+,R1
+SHOW$2 MOV  *R11+,R2
+       ORI  R2,>4000
+       SWPB R2
+       MOVB R2,@VWA
+       SWPB R2
+       MOVB R2,@VWA
+SHOW$
+SHOW$3 MOVB *R1+,R2      *R1 POINTS TO STRING
+       SRL  R2,8
+       JEQ  SHOWRT
+SHOWLP MOVB *R1+,@VWD
+       DEC  R2
+       JNE  SHOWLP
+SHOWRT B    *R11
+***
+VDPFIL MOV  *R11+,R2
+       ORI  R2,>4000
+       SWPB R2
+       MOVB R2,@VWA
+       SWPB R2
+       MOVB R2,@VWA
+       MOV  *R11+,R1
+       MOV  *R11+,R2
+VDP2   MOVB R2,@VWD
+       DEC  R1
+       JNE  VDP2
+       B    *R11
+SCRGEN MOV  R11,R7       *THIS USES DATA STATEMENTS AFTER CALLING
+       AI   R11,6        *POINT
+SCGEN2 MOV  R11,R12
+       MOV  *R7+,R1      *THIS USES R7 AS POINTER TO DATA
+       MOV  *R7+,R3
+       MOV  *R7,R4
+SCR1   MOV  *R3+,R2
+       ORI  R2,>4000
+       SWPB R2
+       MOVB R2,@VWA
+       SWPB R2
+       MOVB R2,@VWA
+       BL   @SHOW$
+       DEC  R4
+       JNE  SCR1
+       B    *R12
+LINE1  MOV  R11,R12
+       BL   @VDPFIL
+       DATA >0348
+       DATA 40,>1400
+       B    *R12
+*
+DRADDR DATA 12*SCRWID+05,13*SCRWID+05,14*SCRWID+05
+       DATA 15*SCRWID+05,16*SCRWID+05,17*SCRWID+05
+* Disk drive graphics
+DRTXT1 BYTE 30 *LENGTH
+       BYTE >00,>00,>00,>00,>00,>20,>20,>20,>00,>00
+       BYTE >00,>00,>00,>20,>20,>20,>00,>00,>00,>0A
+       BYTE >00,>20,>20,>20,>00,>00,>00,>0A,>00,>20
+       BYTE 30
+       BYTE >00,>0D,>00,>00,>00,>20,>20,>20,>00,>0D
+       BYTE >00,>00,>00,>20,>20,>20,>00,>0D,>00,>0B
+       BYTE >00,>20,>20,>20,>00,>0D,>00,>0B,>00,>20
+       BYTE 30
+       BYTE >00,>00,>00,>00,>00,>20,>20,>20,>00,>00
+       BYTE >00,>00,>00,>20,>20,>20,>00,>00,>0E,>10
+       BYTE >12,>20,>20,>20,>00,>00,>0E,>10,>12,>20
+       BYTE 30
+       BYTE >00,>00,>00,>00,>00,>20,>20,>20,>00,>00
+       BYTE >00,>00,>00,>20,>20,>20,>00,>00,>0F,>11
+       BYTE >12,>20,>20,>20,>00,>00,>0F,>11,>12,>20
+       BYTE 30
+       BYTE >00,>00,>00,>00,>00,>20,>20,>20,>00,>00
+       BYTE >00,>00,>00,>20,>20,>20,>00,>00,>00,>0B
+       BYTE >00,>20,>20,>20,>00,>00,>00,>0B,>00,>20
+       BYTE 30
+       BYTE >00,>00,>00,>00,>00,>20,>20,>20,>00,>00
+       BYTE >00,>00,>00,>20,>20,>20,>00,>00,>00,>0C
+       BYTE >00,>20,>20,>20,>00,>00,>00,>0C,>00,>20
+TADDR1 DATA 02*SCRWID+16,03*SCRWID+16,04*SCRWID+16
+       DATA 05*SCRWID+16,07*SCRWID+12
+       DATA 09*SCRWID+13,19*SCRWID+09
+       DATA 22*SCRWID+15,23*SCRWID+14
+TTXT1  BYTE >07,>01,>02,>02,>02,>02,>02,>03
+       BYTE >06,>04,>4D,>59,>41,>52,>43
+       BYTE >03,>05,>06,>07
+       BYTE >02,>08,>09
+H09    EQU  $-1
+       BYTE 15
+       TEXT 'Disk Manager '
+       BYTE >16,>17           roman numeral V
+       BYTE 12
+       TEXT 'Version 1.60'
+       BYTE 21
+       BYTE >13
+       TEXT ' 2020 by MYARC, Inc.'
+       BYTE 10
+       BYTE 'L'+>80,'o'+>80,'a'+>80,'d'+>80,'i'+>80
+       BYTE 'n'+>80,'g'+>80,'.'+>80,'.'+>80,'.'+>80
+       BYTE 12
+       BYTE 'P'+>80,'l'+>80,'e'+>80,'a'+>80,'s'+>80
+       BYTE 'e'+>80,' '+>80,'W'+>80,'a'+>80,'i'+>80
+       BYTE 't'+>80,'.'+>80
+* BIG DSRLNK ROUTINE
+*  modified 3/22/88 for multiple horizon rd's
+DSRLNK DATA DLNKWS,DLENTR
+DLNKWS BSS  32
+NAMBUF BSS  8
+H2000  DATA >2000
+DECMAL TEXT '.'
+HAA    BYTE >AA
+DLENTR MOV  *R14+,R5
+       SZCB @H2000,R15
+       MOV  @>8356,R0
+       MOV  R0,R9
+       AI   R9,>FFF8
+       BL   @VSBR
+       MOVB R1,R3
+       SRL  R3,8
+       SETO R4
+       LI   R2,NAMBUF
+LNKLP  INC  R4
+       C    R4,R3
+       JEQ  LNKLN
+       MOVB @>8800,*R2
+       CB   *R2+,@DECMAL
+       JNE  LNKLP
+LNKLN  MOV  R4,R4
+       JEQ  LNKERR
+       CI   R4,>0007
+       JGT  LNKERR
+       CLR  @>83D0
+       MOV  R4,@>8354
+       INC  R4
+       A    R4,@>8356
+       LWPI >83E0
+       CLR  R1
+       LI   R12,>0F00
+NOROM  MOV  R12,R12
+       JEQ  NOOFF
+       SBZ  >00
+NOOFF  AI   R12,>0100
+       CLR  @>83D0
+       CI   R12,>2000
+       JEQ  NODSR
+       MOV  R12,@>83D0
+       SBO  >00
+       LI   R2,>4000
+       CB   *R2,@HAA
+       JNE  NOROM
+       A    @DLNKWS+10,R2
+       JMP  SGO2
+SGO    MOV  @>83D2,R2
+       SBO  >00
+SGO2   MOV  *R2,R2
+       JEQ  NOROM
+       MOV  R2,@>83D2
+       INCT R2
+       MOV  *R2+,R9
+       MOVB @>8355,R5
+       JEQ  NAME2
+       CB   R5,*R2+
+       JNE  SGO
+       SRL  R5,8
+       LI   R6,NAMBUF
+NAME1  CB   *R6+,*R2+
+       JNE  SGO
+       DEC  R5
+       JNE  NAME1
+NAME2  INC  R1
+       BL   *R9
+       JMP  SGO
+DSRLN3 SBZ  >00
+       LWPI DLNKWS
+       MOV  R9,R0
+       BL   @VSBR
+       SRL  R1,13
+       JNE  DLIOER
+       RTWP
+NODSR  LWPI DLNKWS
+LNKERR CLR  R1
+DLIOER SWPB R1
+       MOVB R1,*R13
+       SOCB @H2000,R15
+       RTWP
+*
+SLAST  END
+*

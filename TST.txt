@@ -1,0 +1,944 @@
+*** MODULE NAME - TST ***
+* (what a _STUPID_ filename)
+VDPWD  EQU  >8C00
+VDPRD  EQU  >8800
+VDPWA  EQU  >8C02
+***
+*
+* REGISTER SETUP --
+* VDPREG - GENERAL PURPOSE FOR USE WITH ROUTINES REQUIRING VDP ACCESS
+*          R8=VDPWD  R9=VDPRD  R10=VDPWA
+* MIDREG - GENERAL PURPOSE FOR USE WITH MIDDLE LEVEL ROUTINES
+* HIREG  - ONLY FOR USE WITH HIGH LEVEL ROUTINES
+*
+***
+VDPREG EQU  >8310
+VDPRG2 EQU  >8316
+HIREG  EQU  >8382
+HIREG2 EQU  >83A2
+GETDWS BSS  >0020
+SECWS  BSS  >0020
+***
+*
+* VDP PRIMITIVES:
+*
+***
+***
+MOVE   MOV  *R11+,R0
+MOVE0  MOV  *R11+,R1
+MOVE1  MOV  *R11+,R2
+MOVER  MOVB *R0+,*R1+
+       DEC  R2
+       JNE  MOVER
+       RT
+*
+FILL   MOV  *R11+,R0
+FILL0  MOV  *R11+,R1
+FILL1  MOV  *R11+,R2
+FILLER MOVB R2,*R0+
+       DEC  R1
+       JNE  FILLER
+       RT
+*
+WRITEV ORI  R1,>4000
+READV  SWPB R1
+       MOVB R1,*R10
+       SWPB R1
+       MOVB R1,*R10
+       B    *R11
+***
+SHOW$1 MOV  *R11+,R1
+SHOW$2 MOV  *R11+,R2
+       ORI  R2,>4000
+       SWPB R2
+       MOVB R2,*R10
+       SWPB R2
+       MOVB R2,*R10
+SHOW$
+SHOW$3 MOVB *R1+,R2      *R1 POINTS TO STRING
+       SRL  R2,8
+       JEQ  SHOWRT
+SHOWLP MOVB *R1+,*R8
+       DEC  R2
+       JNE  SHOWLP
+SHOWRT B    *R11
+***
+VDPFIL MOV  *R11+,R2
+       ORI  R2,>4000
+       SWPB R2
+       MOVB R2,*R10
+       SWPB R2
+       MOVB R2,*R10
+       MOV  *R11+,R1
+       MOV  *R11+,R2
+VDP2   MOVB R2,*R8
+       DEC  R1
+       JNE  VDP2
+       B    *R11
+***
+VDPON  LI   R1,ON
+VDP1   MOVB *R1,*R10
+       MOVB *R1+,@>83D4
+       MOVB *R1,*R10
+       B    *R11
+***
+*
+*  HONK AND BEEP
+*
+***
+HONK1  LI   R1,HNKLST
+       JMP  PLAY
+BEEP1  LI   R1,BEPLST
+PLAY   MOVB *R1+,R2
+       SRL  R2,8
+PLAYLP MOVB *R1+,@>8400
+       DEC  R2
+       JNE  PLAYLP
+       MOVB *R1+,R2
+       SRL  R2,8
+       JEQ  NOSND
+TIMER  LI   R3,1000  *1560
+TIMLP  DEC  R3
+       JNE  TIMLP
+       DEC  R2
+       JNE  TIMER
+       JMP  PLAY
+NOSND  RTWP
+***
+       PAGE
+***
+SCRGEN MOV  R11,R7       *THIS USES DATA STATEMENTS AFTER CALLING
+       AI   R11,6        *POINT
+SCGEN2 MOV  R11,R12
+       MOV  *R7+,R1      *THIS USES R7 AS POINTER TO DATA
+       MOV  *R7+,R3
+       MOV  *R7,R4
+SCR1   MOV  *R3+,R2
+       ORI  R2,>4000
+       SWPB R2
+       MOVB R2,*R10
+       SWPB R2
+       MOVB R2,*R10
+       BL   @SHOW$
+       DEC  R4
+       JNE  SCR1
+       B    *R12
+***
+CLMID  MOV  R11,R12
+       BL   @VDPFIL
+       DATA 07*SCRWID,14*SCRWID,>2000        CLEAR THRU LINE 20
+       B    *R12
+***
+CLSCRN MOV  R11,R12
+       CLR  @HEADUP
+       BL   @VDPFIL
+       DATA >0000,960,>2000
+       B    *R12
+***
+CLTOP  MOV  R11,R12
+       CLR  @HEADUP
+       BL   @VDPFIL
+       DATA >0000,840,>2000
+       B    *R12
+***
+LINE1  MOV  R11,R12
+       BL   @VDPFIL
+       DATA 21*SCRWID
+H0028  DATA 40,>1400
+       B    *R12
+***
+CLRCOM MOV  R11,R12
+       BL   @VDPFIL
+       DATA >0370,80,>2000
+       B    *R12
+***
+GENCOM MOV  *R11+,R7
+       JMP  COM
+COM14  LI   R7,COMTAB+72
+       JMP  COM
+COM13  LI   R7,COMTAB+66
+       JMP  COM
+COM12  LI   R7,COMTAB+60
+       JMP  COM
+COM10  LI   R7,COMTAB+54
+       JMP  COM
+COM9   LI   R7,COMTAB+48
+       JMP  COM
+COM8   LI   R7,COMTAB+42
+       JMP  COM
+COM6   LI   R7,COMTAB+30
+       JMP  COM
+COM4   LI   R7,COMTAB+18
+       JMP  COM
+COM2   LI   R7,COMTAB+6
+       JMP  COM
+COM1   LI   R7,COMTAB
+COM    MOV  R11,R6
+       BL   @CLRCOM
+       BL   @SCGEN2
+       B    *R6
+***
+INTRTN DEC  @BLINK
+       JOC  NOBLNK
+       MOV  @CURLOC,R1
+       SWPB R1
+       MOVB R1,*R15
+       SWPB R1
+       MOVB R1,*R15
+       ORI  R1,>4000
+       MOVB @VDPRD,R0
+       SWPB R1
+       MOVB R1,*R15
+       SWPB R1
+       MOVB R1,*R15
+       AI   R0,>8000
+       MOVB R0,@VDPWD
+       MOV  @BLKSPD,@BLINK    *INITIALIZE COUNTER
+NOBLNK RT
+***
+SETCOL MOVB @DCOLOR,*R10
+       MOVB @DCOLOR+1,*R10
+       B    *R11
+***
+VSBR   SWPB R1
+       MOVB R1,@VDPWA
+       SWPB R1
+       MOVB R1,@VDPWA
+       CLR  R0
+       MOVB @VDPRD,R0
+       B    *R11
+***
+UPDNUM MOV  *R11+,R1
+       MOV  *R11+,R0
+       MOVB R0,@TSTNUM
+VSBW   ORI  R1,>4000
+       SWPB R1
+       MOVB R1,*R10
+       SWPB R1
+       MOVB R1,*R10
+       ANDI R1,>3FFF
+       MOVB R0,*R8
+       B    *R11
+***
+VMBR   MOV  *R11+,R2
+       SWPB R2
+       MOVB R2,*R10
+       SWPB R2
+       MOVB R2,*R10
+       MOV  *R11+,R2
+VMBR2  MOVB *R9,*R1+
+       DEC  R2
+       JNE  VMBR2
+       B    *R11
+***
+VMBW   MOV  *R11+,R2
+       ORI  R2,>4000
+       SWPB R2
+       MOVB R2,*R10
+       SWPB R2
+       MOVB R2,*R10
+       MOV  *R11+,R1
+       MOV  *R11+,R2
+VMBW2  MOVB *R1+,*R8
+       DEC  R2
+       JNE  VMBW2
+       B    *R11
+***
+*   swap dsr page
+SWPDSR ABS  @C9640            geneve?
+       JEQ  SWPDS1            no - don't swap
+       MOVB @>8002,R0         get
+       MOVB @SV8002,@>8002    swap
+       MOVB R0,@SV8002
+SWPDS1 RT                     return
+* power up hfdc card
+POWRUP DATA TEMP,$+2
+       BL   @SWPDSR
+       MOV  @WDPRES,R12
+       SBO  0
+       MOV  @>4004,R9
+       MOV  @2(R9),R9
+       BL   *R9
+       NOP
+       SBZ  0
+       BL   @SWPDSR
+       RTWP
+***
+       PAGE
+***
+LEV0RT
+WSTART LWPI HIREG
+       CLR  @NUMFIL      *SHOW NO FILES IN BUFFER
+       SETO @FCBASE      *SET END OF FCB BUFFER FLAG
+       CLR  @CATACC
+LEV1RT LWPI HIREG
+       BL   @CLSCRN
+       BL   @SCRGEN
+       DATA TTXT1,TADDR1,6
+START
+LEV3RT
+LEV2RT LWPI HIREG
+       BL   @LINE1
+LEV4RT LWPI HIREG
+       CLR  @IGNFER
+       CLR  @DWFORM
+       CLR  @DVMSK
+       CLR  @IGASUB
+       CLR  @IGFSUB
+       SETO @KEYCAS           uppercase only
+       MOV  @WDPRES,R12
+       JNE  PEROK
+       BLWP @>0000
+PEROK  BL   @CLOSE            clsoe any open file
+       DATA PRTPAB
+       BL   @COM1             main command line
+       BLWP @BEEP             beep
+       BL   @COMNB            get command
+       DATA CLIST1
+       JMP  LEV4RT
+***********
+* PRESS OF REDO KEY (F8) COMES HERE TO SEE IF THERE IS
+* A VALID CATALOG TO SHOW. IF SO THEN GO TO REDOP ELSE
+* GOTO LEV4RT
+**********
+*
+REDOC  C    @FCBASE,@HFFFF    VALID CATALOG AVAILABLE
+       JEQ  LEV4RT            NO
+       B    @REDOEP           GO SHOW CATALOG WITH CURRENT ENTRIES
+*************
+* PRESS OF 'V' COMES HERE TO SHOW THE EPROM # OF THE HFDC
+*
+HEPM   BL   @SHOW$1
+       DATA EPROM,11*SCRWID+15  SHOW IT
+       JMP  LEV4RT            THATS ALL
+******************
+***
+*
+* BL   @COMAND - ACCEPTS A ONE - LETTER COMMAND, LOOKS UP
+*  ROUTINE ADDRESS IN TABLE PROVIDED IN DATA AFTER
+*  SUB CALL AND DOES CONTEXT SWITCH TO SUBROUTINE
+*  >0000 SIGNALS END OF DATA LIST
+*
+***
+*
+COMB   MOV  *R11+,R6
+       MOV  @COMSV1,R11
+       MOV  R1,@CURLOC
+       BL   @VSBR
+       MOV  R0,R12
+       AI   R0,>8000
+       BL   @VSBW
+       MOV  @BLKSPD,@BLINK
+       MOV  R6,R7
+CBLP   LIMI 2
+       LIMI 0
+       BLWP @KBSCAN
+       JNE  CBLP
+       BL   @PARSE
+       JEQ  EXEC
+       BLWP @HONK
+       MOV  R7,R6
+       JMP  CBLP
+EXEC   CI   R0,>7F00
+       JH   NODIS2
+       CI   R0,>2000
+       JH   DIS
+NODIS2 BL   @WRITEV
+       MOVB R12,*R8
+       JMP  NODIS
+DIS    BL   @VSBW
+NODIS  MOV  *R6,R5
+       BL   *R5
+       MOV  @COMSV1,R11
+       B    *R11
+*
+COMNB  MOV  *R11+,R6
+       MOV  R11,@COMSV2
+       MOV  R6,R7
+CNBLP  BLWP @KBSCAN
+       JNE  CNBLP
+       BL   @PARSE
+       JEQ  EXEC2
+*      CI   R0,>1000          ctrl-p?        REMOVE SCREEN PRINT SO
+*      JEQ  $+8                              PRINT DIR CAN BE ADDED
+*      CI   R0,>2200          fctn-p?
+*      JNE  $+6
+*      BLWP @PRTSCR           print screen
+       BLWP @HONK
+       MOV  R7,R6
+       JMP  CNBLP
+EXEC2  MOV  *R6,R5
+       BL   *R5
+       MOV  @COMSV2,R11
+       B    *R11
+*
+PARLP  INCT R6
+PARSE  MOV  *R6+,R5
+       JEQ  INVCOM
+       CB   R0,R5
+       JNE  LOWCAS
+       B    *R11
+LOWCAS SWPB R5
+       CB   R0,R5
+       JNE  PARLP
+       B    *R11
+INVCOM INCT R5     *RESET EQUAL BIT
+       B    *R11
+*
+***
+***
+*  BL   @COMP$ - COMPARES THE TWO STRINGS POINTED TO BY R0 AND R1 AND SETS OR
+*     RESETS THE EQUAL STATUS BIT DEPENDING ON WHETHER THE STRINGS ARE THE SAME
+*     OR NOT.
+*     R1 - POINTER TO NEW STRING
+*     R2 - POINTER TO OLD STRING
+***
+*
+COMP$  LI   R12,10
+COMPLP CB   *R1+,*R2+
+       JNE  CRT
+       DEC  R12
+       JNE  COMPLP
+CRT    B    *R11
+*
+DSRSUB DATA SECWS,DSRS1
+DSRS1  MOV  *R14,R7           subroutine code
+       ANDI R7,>007F          mask out any cpu flag
+       AI   R7,>0100          length
+       BL   @VMBW
+       DATA PABSUB,SECWS+14,2 write subroutine code
+       MOV  *R14,R0           get subroutine code again
+       ANDI R0,>0080          cpu flag only
+       A    @DRVNUM,R0        add drive number
+       MOVB @SECWS+1,@>834C   set drive number
+       LI   R0,PABSUB
+       MOV  R0,@>8356
+       BLWP @PRTLNK
+       DATA >A                sub access
+       MOVB @>8350,R5         get error code
+       JNE  $+8               error
+       INCT R14               past subroutine access code
+       RTWP                   return
+       MOV  R5,R4             save error code
+       SRL  R5,8              to lsby
+       CI   R5,7
+       JLE  $+6
+       LI   R5,2              "illegal operation"
+       BL   @CLRCOM
+       BL   @VMBW        *DISPLAY 'ERROR:'
+       DATA ERLN#*SCRWID+00,ERR,8
+       ANDI R5,7
+       SLA  R5,1         *MAKE IT A WORD
+       MOV  @SUBERR(R5),R1    get address for error text
+       BL   @SHOW$2           show on screen
+       DATA ERLN#*SCRWID+08
+       MOV  @COMSV2,R4        save
+       BL   @CONAB1
+       MOV  R4,@COMSV2
+       JMP  DSRS1
+***
+***
+*
+*  READ/WRITE SECTOR
+*  R0 - SECTOR NUMBER
+*  R1 - BUFFER ADDRESS
+*  DRIVE NUMBER SHOULD BE IN DRVNUM
+*
+***
+*   changed 1/6/88 by mdd to use secws as opposed to vdpws
+*
+RSVDP1 SETO R4   * READ<>0, WRITE=0
+       JMP  WSVDP2
+WSVDP1 CLR  R4
+WSVDP2 CLR  R3   *VDP=0, CPU<>0
+       JMP  SECTI2
+RSCPU1 SETO R4
+       MOV  @2(R13),@CPUBUF
+       JMP  WSCPU2
+WSHRD2 MOV  @MSSEC,@>8352
+       MOV  *R13,R1
+       CLR  R4                write flag
+       JMP  RSHRD3
+RSHRD2 MOV  @MSSEC,@>8352
+       MOV  *R13,R1
+       SETO R4                read flag
+       JMP  RSHRD3
+RSHRD1 MOV  *R13,R0
+       MOV  @SECAUX,R1
+       MPY  *R1,R0            multiply by sectors per au
+       MOV  R0,@>8352         msw
+       SETO R4                read flag
+RSHRD3 MOV  R1,@>8350         lsw
+       MOV  R1,@SECTOR        save this
+       MOV  @2(R13),@CPUBUF   cpu buffer location
+       MOV  @2(R13),@>834E    cpu buffer location
+       LI   R0,PAB20
+       MOV  R0,@SCPBDT        pab >0120
+       MOVB @DRVNUM+1,@>834C
+       SOCB @H80,@>834C       set cpu flag
+       CLR  R3                indicate "vdp" to sucker out sector i/o
+       JMP  SECTI3            carry on, james
+WSCPU1 CLR  R4
+       MOV  @2(R13),@CPUBUF
+       BL   @VMBW
+       DATA VSECBF
+CPUBUF DATA >0000,>0100
+WSCPU2 SETO R3                cpu flag
+SECTI2 MOV  R13,R5
+       MOV  *R5+,@SECTOR      sector number
+       MOV  *R5,@>834E        buffer location
+       LI   R0,PAB10
+       MOV  R0,@SCPBDT        pab >0110
+       MOVB @DRVNUM+1,@>834C  drive number
+SECTI3 CLR  @CRCACC
+       MOVB R4,@>834D         read/write flag
+       MOV  R3,@VCFLAG        vdp or cpu flag
+       JEQ  SECTIO            vdp -or- hard disk cpu
+       MOV  @GPLBUF,@>834E
+SECTIO CLR  R7                saved sector number
+IOERR  MOV  @SECTOR,@>8350
+       BL   @VMBW
+       DATA PABSUB
+SCPBDT DATA PAB10,2
+       MOV  @PAB10L,@>8356
+       BLWP @PRTLNK
+       DATA >A
+       MOV  @VCFLAG,R1        vdp or cpu?
+       JEQ  VDPACC            vdp
+       MOVB @>834D,R1         read or write?
+       JEQ  VDPACC            write
+       MOV  @CPUBUF,R1        get cpu buffer location
+       BL   @VMBR             read into cpu
+       DATA VSECBF,>0100
+VDPACC MOV  @CRCACC,R5        did we already have one error?
+       JNE  DEFCRC            yes - error out
+       MOV  R7,R7             were we trying to read another sector and
+*                             then tried to read sector 0 because of err?
+       JNE  DKNFOR            yes
+       MOVB @>8350,R5         get error code
+       JNE  ERROR             error
+       INCT R14               no error - past data
+       RTWP                   return
+*  error found on sector i/o
+ERROR  MOV  R5,R4             save error code
+       ABS  @FOROPR           ERROR DURING FORMAT OPERATION
+       JEQ  NOTFOR            NO
+       LWPI GETDWS            RTN AND SKIP HEADER SETUP
+       B    @GDRT             ERROR RTN
+NOTFOR LI   R5,1              assume "undefined disk error"
+       MOV  R4,R5
+       SRL  R5,12             to lsby and strip lsnybble
+       ANDI R5,7
+       CI   R5,>0002          format error?
+       JEQ  RNFERR            yes
+ERROR1 BL   @CLRCOM
+       BL   @VMBW        *DISPLAY 'ERROR:'
+       DATA ERLN#*SCRWID+00,ERR,8
+       SLA  R5,1         *MAKE IT A WORD
+       MOV  @ERRLST(R5),R1    get address for error text
+       BL   @SHOW$2           show on screen
+       DATA ERLN#*SCRWID+08
+       MOV  @COMSV2,R4        save
+       BL   @CONAB1           continue or abort
+ERRCON MOV  R4,@COMSV2        restore
+       JMP  SECTIO            try all over again
+*
+OTHERR MOV  *R11+,@OTHM        error message to show
+       MOV  R11,@OTHRTN
+       BL   @VMBW
+       DATA ERLN#*SCRWID+0,ERR,8
+       BL   @SHOW$1
+OTHM   DATA 0,ERLN#*SCRWID+8
+       MOV  @OTHRTN,R11
+       RT
+*
+*  comes here if error occured, then read sector 0 successfully - now try
+*  to read the first sector again.
+CRCERR SETO @CRCACC           already had one error
+       MOV  R7,@SECTOR        reset sector number
+       JMP  IOERR             go again
+*
+RNFERR MOV  *R13,R7           get sector number
+       JEQ  DKNFOR            was reading sector 0 - not formatted
+       CLR  @SECTOR     *TRY TO READ SECTOR 0
+       JMP  IOERR
+*
+DEFCRC MOVB @H20,R15          set eq status bit
+IOERRT MOV  *R14,R14          get address
+       RTWP                   go to that
+*
+DKNFOR MOV  R7,*R13           restore
+       MOVB @>8350,R5         get error code
+       JEQ  CRCERR            zero - no error
+       MOV  @IGNFER,R5        ignore format error?
+       JNE  DNFRT             return
+       SETO @DWFORM
+       SETO @IGNFER
+       BL   @CLRCOM
+       BL   @VMBW        *DISPLAY 'ERROR:'
+       DATA ERLN#*SCRWID+00,ERR,8
+*
+       BL   @SHOW$1
+       DATA ERR2,ERLN#*SCRWID+8
+       BL   @SHOW$1
+       DATA FORMQ,22*SCRWID+13
+       MOV  @COMSV1,@SAVCM1
+       BL   @COMNB
+*
+       DATA FQLST
+FDISK  BL   @LINE1
+       MOV  @DRVNUM,R3
+       MOV  @HRDX,R15         TEST IF FORMAT FOR WIN
+       ABS  *R15
+       JEQ  $+6               NO
+       B    @FORWIN           GO FORMAT WIN
+       BL   @CLTOP
+       LI   R15,RECURS
+       MOV  @>834C,*R15+
+       MOV  @SECTOR,*R15+
+       MOV  @>834E,*R15+
+       MOV  @VCFLAG,*R15+
+       MOV  @COMSV2,*R15+
+       MOV  R13,*R15+
+       MOV  R14,*R15+
+       MOV  @CPUBUF,*R15      BUFFER FOR CURRENT OPERATION
+       BL   @FORMAT
+       BL   @CLTOP
+       LI   R15,RECURS
+       MOV  *R15+,@>834C
+       MOV  *R15+,@SECTOR
+       MOV  *R15+,@>834E
+       MOV  *R15+,@VCFLAG
+       MOV  *R15+,@COMSV2
+       MOV  *R15+,R13
+       MOV  *R15+,R14
+       MOV  *R15,@CPUBUF      RESTORE THE CORRECT CPU BUFFER ADDRESS
+       MOV  @SAVCM1,@COMSV1
+       CLR  @IGNFER
+       CLR  R15
+       SETO @FFFLG            SET FORMAT FLOPPY FLAG
+       B    @SECTIO
+DNFRT  CLR  R15               clear status bits
+       JMP  IOERRT
+*
+* CONABO - clear command line, type "Continue   Exit", wait for c or e.
+*    If C, return to caller. If E, return to LEV0RT
+CONABX MOV  *R11+,R12
+       MOV  R11,@CNABRR+2
+       JMP  CONAB3
+CONAB1 MOV  R11,@CNABRR+2
+       JMP  CONAB2
+CONABO MOV  R11,@CNABRR+2
+       BL   @CLRCOM
+CONAB2 LI   R12,LEV0RT
+CONAB3 MOV  R12,@CNABL+2      abort address
+       BL   @SHOW$1
+       DATA CNABT,22*SCRWID+12
+       BL   @COMNB
+       DATA CNABL
+CNABR  BL   @CLRCOM
+       BL   @LINE1            CLEAR ERROR MESSAGE
+CNABRR B    @0
+*
+***
+*
+*  KEYBOARD INPUT ROUTINE - ACCEPTS INPUT FROM USER AND STORES IN BUFFER
+*  FUNCTION KEY ASSIGNMENTS ARE AS FOLLOW:
+*    DELETE - DELETES CHARACTER UNDER CURSOR, REPEATS
+*    INSERT - INSERTS ONE SPACE UNDER CURSOR, REPEATS
+*    ERASE - ERASES INPUT FIELD AND POSITIONS CURSOR AT BEGINNING OF FIELD
+*    CLEAR - SAME AS ERASE
+*    BEGIN - PUTS CURSOR AT BEGINNING OF INPUT FIELD
+*    PROCEED - SAME AS CARRIAGE RETURN
+*    AID - NO FUNCTION
+*    REDO - PUTS BACK WHATEVER WAS ORIGINALLY IN THE BUFFER
+*    BACK - ABORT
+*    RIGHT ARROW KEY - NONDESTRUCTIVE SPACE KEY
+*    LEFT ARROW KEY - NONDESTRUCTIVE BACKSPACE
+*    UP ARROW KEY - ABORTS INPUT, ORIGINAL INPUT REMAINS AND SETS EQUAL BIT
+*
+*  REGISTER ASSIGNMENTS:
+*    R0 - VDP ADDRESS
+*    R1 - POINTS TO ORIGINAL BUFFER
+*    DATA - FIELD LENGTH
+*    DATA - DISALLOWED CHARACTERS - ONE IN EACH BYTE, TOTAL OF TWO MAXIMUM
+*
+*  ALL BUFFERS HAVE LENGTH BYTE, THEN INFORMATION
+*  MAX IS 49 CHARACTERS - LIMITED BY INPUT BUFFER
+*  A VALID EXIT KEY (PROCEED, ENTER) WILL COMPARE THE STRING IN THE BUFFER TO
+*  THE ORIGINAL STRING.  IF THEY ARE THE SAME THE EQUAL BIT WILL BE SET AND NO
+*  TRANSFER WILL OCCUR.  IF THEY ARE DIFFERENT THEN THE EQUAL BIT WILL BE RESET
+*  AND THE NEW STRING WILL REPLACE THE ORIGINAL STRING.  IF AN ABORT EXIT IS
+*  USED (UP, DOWN, BACK, BEGIN) THEN THE ORIGINAL STRING WILL BE PUT BACK ON THE
+*  SCREEN, THE CARRY BIT WILL BE SET AND THE ASCII CODE OF THE KEY PRESSED WILL
+*  BE PLACE IN THE MSB OF R0 OF THE CALLING WORKSPACE. IF A VALID EXIT KEY IS
+*  USED THEN THE CARRY BIT WILL BE RESET.
+***
+***
+INPUT1 MOV  *R14+,@LENGTH *LENGTH OF INPUT FIELD
+       MOV  *R14+,@DISALL *TWO DISALLOWED CHARACTERS
+       CLR  @KEYCAS           allow upper/lower case letters
+       MOV  R13,R10       *R13 IN VDPREG
+       LWPI VDPREG
+       MOV  *R13+,@FLDADR *VDP ADDRESS
+       MOV  *R13,@ORIG$   *POINTER TO ORIGINAL STRING
+       LI   R0,LEN$
+       A    @LENGTH,R0    *ADD LEN$ TO LENGTH TO GET MAXADR
+       MOV  R0,@MAXADR
+       CLR  R12           *CLEAR INSERT PENDING FLAG
+       JMP  REDO
+*
+LEFT   CI   R6,INBUFF
+       JEQ  END$1
+       MOVB *R6,R0
+       DEC  R6
+       MOV  @CURLOC,R1
+       DEC  @CURLOC
+LEFT2  BL   @VSBW
+       JMP  END$1
+*
+BEGIN  MOV  @CURLOC,R1
+       MOVB *R6,R0
+       LI   R6,INBUFF
+       MOV  @FLDADR,@CURLOC
+       JMP  LEFT2
+*
+RIGHT  C    R6,R7
+       JH   END$1
+       C    R6,@MAXADR
+       JEQ  END$1
+       MOVB *R6+,R0
+       MOV  @CURLOC,R1
+       INC  @CURLOC
+       JMP  LEFT2
+*
+INSERT C    R6,R7
+       JH   INPKEY
+       SETO R12          *SET INSERT PENDING FLAG
+       JMP  END$1
+INS2   C    R7,@MAXADR
+       JL   MID$2
+       C    R6,@MAXADR
+       JEQ  TOOFAR
+       JMP  ATEND
+MID$2  INC  R7
+ATEND  ORI  R1,>4000
+       MOVB @VDPREG+3,*R10
+       MOVB R1,*R10
+       MOV  R6,R4
+       INC  R6
+INSLP  MOVB R0,*R8
+       MOVB *R4,R3
+       MOVB R0,*R4+
+       MOVB R3,R0
+       C    R4,R7
+       JLE  INSLP
+       INC  @CURLOC
+       JMP  END$1
+*
+REDO   MOV  @FLDADR,R1
+       MOV  R1,@CURLOC
+       BL   @WRITEV
+       MOV  @ORIG$,R1
+       LI   R3,>2000
+       LI   R2,LEN$
+       MOVB *R1+,R7
+       MOVB R7,*R2+      *TRANSFER STRING LENGTH BYTES
+       SRL  R7,8         *MAKE IT A WORD
+       AI   R7,LEN$      *FIND ACTUAL ADDRESS OF LAST CHARACTER IN INBUFF
+       CI   R7,LEN$           we have to let it set r7 <sigh>
+*                                 otherwise, i'd put the jeq after the srl
+       JEQ  REDLP             null string - don't display anything
+REDOLP MOVB *R1,*R2+
+       MOVB *R1+,*R8
+       C    R2,R7
+       JLE  REDOLP
+       C    R2,@MAXADR
+       JHE  REDLP1
+REDLP  MOVB R3,*R2+
+       MOVB R3,*R8
+       C    R2,@MAXADR
+       JLE  REDLP        *SHOW ORIGINAL STRING
+REDLP1 MOVB R3,*R2       *ADDED 10/10/85 TO STOP APPENDED /'S WHEN DELETING
+INPK1  LI   R6,INBUFF
+END$1  MOV  @CURLOC,R1
+       BL   @WRITEV
+END$2  MOVB *R6,R5
+       AI   R5,>8000
+       MOVB R5,*R8
+END$4  MOV  @BLKSPD,@BLINK
+*
+INPKEY LIMI 2            *ALLOW INTERUPTS FOR BLINKING CURSOR
+       LIMI 0
+       CLR  R0
+       BLWP @KBSCAN
+       JNE  INPKEY       *ALLOW REPEATING CHARACTERS
+       LI   R1,FKEYS
+       CB   R0,*R1+      *>8D00 CHECK FOR ENTER KEY
+       JEQ  ENTER
+       CB   R0,*R1+      *DON'T ALLOW CONTROL CHARACTERS
+       JL   INPKEY
+       C    R0,*R1+      *FILTER OUT FUNCTION KEYS
+       JH   FUNCTN
+       CB   R0,*R1+      *CHECK FOR DISALLOWED CHARACTERS
+       JEQ  NOSHOW
+       CB   R0,*R1+
+       JEQ  NOSHOW
+       MOV  @CURLOC,R1
+       MOV  R12,R12      *CHECK TO SEE IF INSERT IS PENDING
+       JNE  INS2
+       C    R7,@MAXADR
+       JL   NOTFUL
+       C    R6,R7
+       JEQ  TOOFAR
+       JMP  MID$
+NOTFUL C    R6,R7
+       JLE  MID$
+       INC  R7
+       C    R6,@MAXADR
+       JL   MID$
+       MOVB R0,*R6
+       JMP  END$1
+MID$   INC  @CURLOC
+       MOVB R0,*R6+      *PUT BYTE INTO INBUFF
+       BL   @VSBW
+       JMP  END$2
+TOOFAR MOVB R0,*R6
+       AI   R0,>8000
+       BL   @VSBW
+       BLWP @HONK
+       JMP  END$4
+NOSHOW BLWP @HONK
+GOINPK JMP  INPKEY
+*
+DELETE C    R6,R7        *CHECK TO SEE IF AFTER STRING
+       JH   INPKEY
+       MOV  @CURLOC,R1   *SET VDP TO WRITE STARTING AT CURSOR
+       BL   @WRITEV
+       MOV  R6,R4
+       MOV  R6,R5
+       INC  R4
+DELLP  MOVB *R4,*R8
+       MOVB *R4+,*R5+
+       C    R5,R7
+       JLE  DELLP
+       DEC  R7           *ADJUST FOR NEW LENGTH
+       JMP  END$1
+*
+ERASE  MOV  @LENGTH,R3   *SET UP COUNTER TO CLEAR ENTIRE FIELD
+       MOV  @FLDADR,R1   *SET UP R0 FOR WRITEV
+       MOV  R1,@CURLOC   *SET CURSOR LOCATION AT BEGINNING OF FIELD
+       BL   @WRITEV
+       LI   R0,INBUFF    *POINTER TO INBUFF
+       LI   R2,>2000
+*H2000  EQU  $-2
+H20    EQU  $-2
+ERALP  MOVB R2,*R8
+       MOVB R2,*R0+
+       DEC  R3
+       JNE  ERALP
+       LI   R7,LEN$      *CLEAR LENGTH OF INBUFF
+       JMP  INPK1
+*
+FUNCTN MOV  R0,R1
+       SRL  R1,8         *JUSTIFY IN LSB
+       AI   R1,-129      *KNOCK OUT OFFSET
+H7F    EQU  $-1
+       JEQ  GOINPK
+       CI   R1,16
+       JHE  GOINPK
+       SLA  R1,1         *MAKE IT A WORD
+       MOV  @HASH1(R1),R1 *GET ADDRESS
+       CLR  R12
+       B    *R1          *GO TO IT
+*
+ENTER  LI   R4,LEN$
+       MOV  R7,R5      *FIND ACTUAL LENGTH OF STRING IN INBUFF
+       S    R4,R5
+       JEQ  NOSHOW
+       BLWP @BEEP
+       MOV  @CURLOC,R1
+       MOVB *R6,R0        *GET RID OF CURSOR
+       BL   @VSBW
+       MOVB @VDPREG+11,*R4 *MOVE CURRENT INBUFF LENGTH BYTE FROM LSB OF R5
+       MOV  @ORIG$,R2
+       MOV  R4,R1
+       MOV  R2,R3
+       MOVB *R1+,R13
+       CB   R13,*R2+
+       JNE  NOTEQ
+       SRL  R13,8
+ICLP   CB   *R1+,*R2+
+       JNE  NOTEQ
+       DEC  R13
+       JNE  ICLP
+       JMP  NOTRAN
+NOTEQ
+ENTLP  MOVB *R4+,*R3+    *MOVE THE REST
+       DEC  R5
+       JOC  ENTLP
+CLROF  C    R4,@MAXADR
+       JH   ENDFLD
+       MOVB @H20,*R3+
+       INC  R4
+       JMP  CLROF
+ENDFLD LWPI VDPRG2
+       ANDI R15,>00FF
+       SETO @KEYCAS           upper case only
+       RTWP
+NOTRAN LWPI VDPRG2
+       MOVB @H20,R15
+       SETO @KEYCAS           upper case only
+       RTWP
+*
+UP
+DOWN
+BACK   MOV  R0,R7  *SAVE KEY PRESSED IN R4 OF VDPRG2
+       MOV  @FLDADR,R1
+       BL   @WRITEV
+       MOV  @LENGTH,R2
+FCLP   MOVB @H20,*R8
+       DEC  R2
+       JNE  FCLP
+       BL   @WRITEV
+       MOV  @ORIG$,R1
+       BL   @SHOW$       *PUT ORIGINAL STRING ON SCREEN
+       LWPI VDPRG2
+       ORI  R15,>3000    *SET CARRY AND EQUAL BITS
+       CLR  *R13
+       MOVB R4,*R13      *MOVB ASCII VALUE OF EXIT KEY TO R0 OF CALLING WS
+       SETO @KEYCAS           upper case only
+       RTWP
+***
+*   B   @BYE - RETURNS TO OS
+***
+BYE    BL   @GENCOM
+       DATA COM5
+       BLWP @KBSCAN
+       JOC  $-4
+       JNE  $-6
+       CI   R0,'Y'*256
+       JEQ  BYE1
+       BL   @VDPFIL                   clear message
+       DATA 19*SCRWID+13,13,>2000
+       B    @LEV2RT
+BYE1   BLWP @>0000
+       ORI  R15,>3000    *SET CARRY AND EQUAL BITS
+       CLR  *R13
+       MOVB R4,*R13      *MOVB ASCII VALUE OF EXIT KEY TO R0 OF CALLING WS
+       SETO @KEYCAS           upper case only
+       RTWP
+***
+*   B   @BYE - RETURNS TO OS
+***
+BYE    BL   @GENCOM
+       DATA COM5
+       BLWP @KBSCAN
+       JOC  $-4
+       JNE  $-6
+       CI   R0,'Y'*256
+       JEQ  BYE1
+       BL   @VDPFIL                   clear message
+       DATA 19*SCRWID+13,13,>2000
+       B    @LEV2RT
+BYE1   BLWP @>0000

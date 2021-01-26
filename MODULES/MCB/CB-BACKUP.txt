@@ -1,0 +1,555 @@
+*
+*******************************
+*   WDS to Floppy Backup      *
+*******************************
+*
+**********************************
+* R4 = Low word of # of AU in file to left read
+* R5 = High word
+* R6 = Low word of next AU in file to start read
+* R7 = High word
+* R10 = # of AUs in memory left to fill
+* R9 = Pointer in FCB list passed by MDM5
+**********************************
+*
+**********************************
+* High memory beginning at >EF00 is used to contain the following
+* info on all files in set
+* 10 bytes - files name
+* 12 bytes - additional info block
+* 8 byte - Date-time Created/Updated
+* 2 bytes - # of disk file in on
+* This info is used during the backup and for printing stats
+* Upon completion of backup of a sub-directory
+*********************************
+*
+********************************
+* The information contained of the disk shall be as follows:
+* Sector 0 - Standard floppy sector 0
+* Beginning with sector 1 of the 1st floppy is the following information:
+*           file name and extra info block on file
+* Bytes 170-179 - 10 Character volume name
+* Bytes 183-223 - 41 characters for current backup path & LENGTH
+* Bytes 224-244 - 20 character backup name
+* Bytes 246-247 - Total files in directory
+* Bytes 248-249 - Total files left to backup in current directory after this one
+* Bytes 250-251 = The total disks in backup
+* Bytes 252-253 = The total files in backup
+* Bytes 254-255 - Total dirs in backup
+******************************
+*
+*****************************************
+* Before the backup begins this routine to count all the dirs
+* and files to backup
+*****************************************
+*
+BACKUP BL   @DUPMEM
+       DATA 256,' ',FIB
+       LI   R0,PATHL
+       LI   R2,>0500
+       MOVB R2,*R0+
+       SWPB R2
+       LI   R1,OROVR1+16
+BAKROT MOVB *R1+,*R0+
+       DEC  R2
+       JNE  BAKROT
+       BLWP @VMBR        GET BACKUP NAME
+       DATA MCL*5+14
+       DATA FIB+224
+       DATA 20
+       BLWP @SETPR        SET INTIAL PATH TO ROOT
+       CB   @BR,@FF      PRINTout needed
+       JNE  BACKUS       NO
+       LWPI WS5          SAVE my ws
+       BL   @POPN        GO OPen printer
+       BL   @PHEAD       GO PRint header
+       BL   @WRTLP       BUILD volume line
+       DATA VOLHED
+       BL   @PDSR        PRINT it
+       BL   @PDSR        BLANK line
+       LWPI MAINWS       RESTOre ws
+BACKUS MOV  @DONEP,R1    DONE ALL DIRS
+       JNE  BAKGO        YES
+       CB   @BR,@FF      PRINT needed
+       JNE  BCKUS        NO
+       BL   @DUPMEM
+       DATA 80,'  ',WBUF1
+       BLWP @VMBR        GET Path from screen
+       DATA 1
+       DATA WBUF1
+       DATA 40
+       BL   @PDSR        PRINT it
+BCKUS  MOV  @FIB+248,R3   GET COUNT OF FILES
+       JEQ  BCKUS2       IF NO files don't count it
+       A    R3,@FILTOT   COUNT UP TOTAL FILES
+BCKUS1 MOV  @FILTOT,R3   DISPLAY IT
+       BLWP @H2DM
+       DATA DTEXT
+       BLWP @VMBW
+       DATA MCL*9+18
+       DATA DTEXT
+       DATA 4
+       INC  @DIRTOT      ADD TO TOTAL DIRS
+       MOV  @DIRTOT,R3
+       BLWP @H2DM
+       DATA DTEXT
+       BLWP @VMBW
+       DATA MCL*7+18
+       DATA DTEXT
+       DATA 4
+BCKUS2 BLWP @SETPA
+       JMP  BACKUS
+BAKGO  CLR  @DONEP        RESET done flag
+       CB   @BR,@FF      PRINTing on?
+       JNE  BAKGOP       NO
+       BL   @DUPMEM
+       DATA 80,'  ',WBUF1
+       BL   @PDSR        AFTER A BLANK LINE
+       BLWP @VMBR        GET TOTAL DIRS AND FILES FROM SCREEN
+       DATA MCL*7+1
+       DATA WBUF1
+       DATA 40
+       BL   @PDSR
+       BLWP @VMBR
+       DATA MCL*9+1
+       DATA WBUF1
+       DATA 40
+       BL   @PDSR
+       CLR  @PLINE       SET FOR TOF NEXT TIME
+BAKGOP MOV  @FILTOT,R1   ANY FILES TO BACKUP
+       JNE  BAKGO1       YES
+       BLWP @VMBW        TELL USER NO FILES
+       DATA MCL*19+1
+       DATA NOFILM
+       DATA 18
+       B    @NOFHNK      JUST LEAVE BUT HONK
+BAKGO1 MOV  @DIRTOT,@FIB+254  save the total # of dirs in backup
+       MOV  @FILTOT,@FIB+252  save the total # of files in backup
+* the total # of files in the directory will be set by below
+       BLWP @SETPR       RESET PATH BACK TO ROOT TO BEGIN BACKUP
+       BLWP @BACKP       Go startup drives
+BAKGO2 LI   R10,MAXM     Count of total amount of sector space in memory
+BAKGO3 LI   R9,FCBP      START of files FDR pointers
+       JMP  MLOOP
+ABTW   B    @ABORTW
+*
+MLOOP  MOV  *R9+,R1      GET The sector # of a file
+       JNE  WDSBK        MORE files to do
+       BLWP @SETPA       SET PAth for nex dir
+       MOV  @DONEP,R1    ALL Directories done
+       JEQ  BAKGO3       NO
+       SETO @DONE        SET Done flag
+       CI   R10,MAXM     ANY Buffers left to write
+       JEQ  MLPNOW       NO
+       B    @GETMR6      GO WRite what is left and exit
+MLPNOW B    @ENDBOP
+*
+WDSBK  BL   @GETSCW     Get a sector from WDS
+       DATA WBUF1        CPU location for data
+       DATA WDRRD        WDS # & Read sector
+       JMP  ABTW         if error reading abort
+WDSBK1 MOVB @BUTYP,R0    Backup all or only changed
+       JNE  WDSBK2       Backup all
+       MOVB @WBUF1+12,R0 TEST If a backup needed
+       COC  @UPBIT,R0    IS A BACKUP NEEDED?
+       JNE  MLOOP        If bit not set then backup not needed
+*
+* Now get info about this file to backup
+*
+WDSBK2 BLWP @VMBW        Display filename being backed up
+       DATA MCL*20+12
+       DATA WBUF1
+       DATA 10
+       MOV  @NXTOUT,R3   Save file name
+       LI   R0,WIONAM    LOCATION IN CPU FOR WDS I/O NAME
+       LI   R1,WBUF1     CPU buffer that has file info
+       LI   R2,10
+GETN   MOV  *R1,*R3+    Save name
+       MOV  *R1+,*R0+
+       DECT R2
+       JNE  GETN
+       CLR  @DRIO        Set to get file status
+       MOVB @WDSC,@DRIO   Load wds #  +CPU I/O
+EMPNT  LI   R0,>2000     Offset for extra info block
+EMBIT  EQU  EMPNT+2
+       MOV  R0,@SEC#     Have extra info block placed at >8320
+       BL   @DSRSUB      Go get file info
+       DATA FSIN         File sector read code
+       DATA WIONAM       Cpu pointer to file name
+ABT2   JMP  ABTW         Any failure on this is really bad news
+* Must build up sector 1 FIB
+       LI   R1,FIB       START of image in memory
+* 10 bytes for filename
+       LI   R0,10        Move Name to fib
+       LI   R2,WBUF1
+FIBN   MOV  *R2+,*R1+
+       DECT R0
+       JNE  FIBN
+* Move additional info block to FIB
+       SZC  @UPBIT,@>8324 TURN OFF UPDATE IT
+       LI   R0,12        12 bytes to move
+       LI   R2,>8322
+FIBA   MOV  *R2,*R1+     Save info in fib
+       MOV  *R2+,*R3+    Another copy for stats
+       DECT R0
+       JNE  FIBA
+       LI   R2,WBUF1+20  Now save time/date stamps
+       LI   R0,8         8 bytes
+TDSLP  MOV  *R2,*R1+
+       MOV  *R2+,*R3+
+       DECT R0
+       JNE  TDSLP        Not all saved
+* Now move this FIB in line with the rest of the output sectors
+       LI   R0,FIB
+       MOV  @MPOINT,R1   START of cpu sector image buffer
+       LI   R2,256
+TDSLP1 MOV  *R0+,*R1+
+       DECT R2
+       JNE  TDSLP1
+       MOV  R1,@MPOINT   START of data storage
+       DEC  R10          1 LESs buffer for file data
+       JNE  B1SEC        STILL more available
+       LI   R8,MAXM
+       MOV  R8,@MXAU
+       CB   @BR,@FF      WILL there be a printout
+       JNE  B0SEC        NO
+       INCT R3           LEAVE room for disk # on rtn
+       MOV  R3,@NXTOUT
+B0SEC  BLWP @BOUT        OUTPUT what we got
+       MOV  @MXAU,R10    RESET to max au available
+       MOV  @NXTOUT,R3   MUST setup so disk # can be add for printout
+       DECT R3           CORREct position
+B1SEC  MOV  @BAKCNT,*R3+ Save disk # in set of this file
+       CB   @BR,@FF      WILL THERE BE A PRINTOUT
+       JNE  B2SEC        NO SO DON'T NEED TO SAVE STATS ON FILE
+       MOV  R3,@NXTOUT   Set to next store of start mem & stats
+B2SEC  DEC  @FIB+248     DEC the # of Files in directory to do
+       MOV  @>8322,R4    Get the # of sectors in file low word
+       MOV  @>832A,R5    Get high byte
+       SRL  R5,8         Move to low
+       CLR  R6           Counter of sectors read low
+       CLR  R7           high
+FILEGD LI   R0,MAXM      Test the # of AUs left to save to
+INTBIT EQU  FILEGD
+       MOV  R5,R5        If any high bits set this is the only file on disk
+       JNE  ONLY1        This will be the only file on this disk
+       S    R10,R0       Get the # of AU's left
+       A    R4,R0        Add in the # of AU's this file needs low
+       A    @BSEC,R0     Add current diskette sector # to file size
+       C    R0,@GOODSC   Is this greater than the known good sectors?
+       JLT  MLOOP1       Yes
+ONLY1  SETO @DFULL       Set disk full flag
+MLOOP1 MOV  R6,@>8322    Low word of starting AU of file to read
+       SWPB R7           Get high byte
+       MOVB R7,@>832A    Load high byte
+       SWPB R7           Back in order
+       MOV  @MPOINT,@>8320 Memory location to store data read
+       MOV  R5,R5        ANY HIGH BITS SET
+       JNE  USE10        YES USE R10 TO GET SECTORS
+       C    R10,R4       IS THE # OF SECTORS AVAILABLE > THAN SIZE NEEDED
+       JLT  USE10        NO USE THEN # AVAILBLE
+       MOV  R4,@DRIO     USE THE # OF SECTORS LEFT TO GET IN FILE AS SIZE
+       JMP  USE4
+USE10  MOV  R10,@DRIO    Maximum # of AU's that can be read in 1 pass
+USE4   MOVB @WDSC,@DRIO   Make sure pointing to correct drive
+       LI   R0,>2000
+       MOV  R0,@SEC#
+       BL   @DSRSUB
+       DATA FSIN         Read op
+       DATA WIONAM       Pointer to file name in CPU
+       JMP  ABT2         Fatal error  WDS
+       MOVB @DRIO+1,R1   Get actual # of sectors read
+       SRL  R1,8         Make a count
+******************************************************
+* Must go through is loop because the file size can
+* be greater than 16 bits in length
+******************************************************
+       MOV  R1,R8        Get sectors read
+       MOV  R5,R5        Any bits in high byte set
+       JNE  BFCNT        Yes go through proper loop
+* If not set then do this loop
+BFCTL  INC  R6           Next to read
+       JNE  BFCTL1       If no wrap skip
+       INC  R7           Inc high byte of next get
+BFCTL1 DEC  R4           Dec # in file
+       DEC  R8           Dec # read
+       JNE  BFCTL        If not zero continue
+       JMP  TTW          All done Now see if its time to write
+*
+BFCNT  INC  R6           Add 1 to next sector to get
+       JNE  BFCNT1       If no wrap don't inc high
+       INC  R7           Inc high
+BFCNT1 DEC  R4           Low -1 from # done
+       CI   R4,>FFFF     Count wrap
+       JNE  BFCNT2       No
+       DEC  R5           Yes dec high byte
+BFCNT2 DEC  R8           Decement # read
+       JNE  BFCNT        Not zero continue
+*
+TTW    C    R1,R10       Did it fill up available memory
+       JNE  GETMOR       No, So got all of file
+* Must xfer what we got to floppy
+       LI   R8,MAXM      Set to xfer all memory AU's
+       MOV  R8,@MXAU     Store it for write routine
+       BLWP @BOUT        Output info
+       MOV  @MXAU,R10
+       JMP  MLOOP1      Return here if more sectors to file
+*
+****** Come here when all of file is saved & there is room for more
+*
+GETMOR S    R1,R10       Subtract # of AUs read from file
+       SLA  R1,8         Make the # of AUs read into memory blocks
+       A    R1,@MPOINT   Add this to memory pointer
+GETMR5 MOV  @DFULL,R0    Is there room for any more files on disk
+       JEQ  GETMR3       Yes
+GETMR6 LI   R8,MAXM      SET The # of sectors to output
+       S    R10,R8       Max AU contains the amount left from last
+       MOV  R8,@MXAU     Set the # of AUs for write routine
+       BLWP @BOUT        Write out the rest of disk
+*  Return here if all of file was saved
+*
+       MOV  *R9,R0       ARE THERE ANY MORE FILES TO PROCESS in dir?
+       JNE  GETMRY       YES
+       BLWP @SETPA       ALL DONE TIME TO see if there are more dirs to do
+       MOV  @DONEP,R1    ANY More dirs to do?
+       JEQ  GETMRY       YES
+       B    @ENDBOP      ALL Files done
+GETMRY MOV  @MXAU,R10    Reset # of AUs available
+       MOV  @DFULL,R0    Did it fill up the disk
+       JEQ  GETMR3       No
+       CLR  @DFULL       Clear full flag
+       BL   @NEWDSK      GET a new disk and prep it
+GETMR3 B    @MLOOP       Go get the next file
+*
+*
+**************************************
+* Output to Backup sectors to floppy *
+**************************************
+*
+*************************
+* R3 = Total files written
+* R4 = Low count of sectors in file to write
+* R5 = High count of sectors in file to write
+* R6 = Pointer to AU in memory address
+* R7 = # of files left to backup in current dir
+* R10 = # of AUs to write
+************************
+*
+BOUT   DATA WS2,BOUT1
+*
+BOUT1  MOV  @MXAU,R10    Get # of AUs to write
+       LI   R6,MEMADD    Point to start address in memory
+OUT    MOV  R5,R5        AT THe start of a file?
+       JNE  OUT2         NO
+       MOV  R4,R4        HOW About low count
+       JNE  OUT2         NO MOre sectors in file to write
+       MOV  R6,@OUTDSP   NAME
+       MOV  R6,@OUTDP1   SAVE A COPY OF THIS SECTOR FOR PRINTOUT
+       BLWP @VMBW
+       DATA >1100
+OUTDP1 DATA 0
+       DATA 256
+       BLWP @VMBW        SHOW the name of the file to write
+       DATA MCL*20+29
+OUTDSP DATA 0
+       DATA 10
+       MOV  @10(R6),R4   GET The low/mid of sectors to write
+       MOV  @18(R6),R5   GET The high count
+       SRL  R5,8
+       MOV  @248(R6),R7  GET THE # OF FILES LEFT TO BACKUP IN CURRENT DIR
+       INC  R4           ADD 1 for file info sector
+       JNE  OUT1         NO WRap
+       INC  R5           LOW/Mid wrapped so add 1 to high
+*
+* Update display of total files in set
+* R3 is equal to the # of files in set
+OUT1   MOV  @FILTOT,R3
+       BLWP @H2DM
+       DATA DTEXT
+       BLWP @VMBW
+       DATA MCL*9+18     Display count
+       DATA DTEXT
+       DATA 4
+       DEC  @FILTOT      1 LESS file to do
+*
+OUT2   C    @BSEC,@TOTFSC Disk Full
+       JLT  OUTGD        Ok to continue
+       BL   @NEWDSK      Need new disk
+       JMP  OUT2         Continue
+OUTGD  MOV  @BSEC,@SSEC  Make this the sector #
+       MOV  R6,@WRTSD    Cpu location of data
+       BL   @WRTSC1      Write a sector to output
+       DATA DRWT         Write op
+       JMP  ABTF         Fatal return
+       AI   R6,256       Next Memory location to xfer
+       MOV  R5,R5        ANY High count to dec
+       JEQ  OUT3         NO
+       DEC  R4           DEC Low count(Still have high to do)
+       CI   R4,>FFFF     WRAP
+       JNE  OUT4         NO
+       DEC  R5           YES Now dec high count
+       JMP  OUT4
+OUT3   DEC  R4           DEC Low count
+       JNE  OUT4         FILE not done
+       DEC  R7           WAS This the last file in this directory
+       JNE  OUT4         NO
+* display new directory count
+       CB   @BR,@FF      INCLUDE PRINTOUT
+       JNE  OUTNPR       NO
+       BLWP @PRTRPT      GO DO IT
+OUTNPR DEC  @DIRTOT      1 LESS dir to do
+       MOV  @DIRTOT,R3
+       BLWP @H2DM
+       DATA DTEXT
+       BLWP @VMBW        DISPLay new dirs count
+       DATA MCL*7+18
+       DATA DTEXT
+       DATA 4
+*
+OUT4   INC  @BSEC        NEXT SECTOR TO WRITE
+       DEC  R10          Done all
+       JNE  OUT          Do next sector
+       MOV  @DONE,R0     Operation complete
+       JEQ  OUTGD1       No
+       CLR  @DONE
+       B    @ENDBOP      ALL DONE
+*
+OUTGD1 LI   R1,MEMADD    Reset start of sector store
+       MOV  R1,@MPOINT
+       LI   R1,MAXM      RESET TO MAX AU #
+       MOV  R1,@MXAU
+       RTWP
+*
+ABTF   B    @ABORTF
+*
+*
+* Come here when all done
+*
+ENDBOP LI   R0,MCL*7+18  NO DIRS TO DO
+       LI   R1,'0 '
+       BLWP @VSBW
+       LI   R0,MCL*9+18  NO FILES TO DO
+       BLWP @VSBW
+       BL   @CLRLN       Remove I/O message
+       DATA MCL*20,1
+       MOVB @FDRS,R1     MAKE 1st drive active again
+       AI   R1,>3000
+       LI   R0,MCL*3+13
+       BLWP @VSBW
+       MOVB @FDRS,R10    Get 1st disk #
+       MOV  @BD1IN,R0    Is backup disk 1 available
+       JEQ  ENDBP2       Yes update 1st FIB with disk set and files count
+       BLWP @BEEP
+ENDBP1 BLWP @VMBW        Ask that backup disk 1 be put in
+       DATA MCL*19+1
+       DATA MDSKM        Main disk message
+       DATA 21
+       MOVB R10,R1       Get #
+       AI   R1,>3000     Display main disk #
+       LI   R0,MCL*19+22
+       BLWP @VSBW
+       BL   @GETKYC      Wait a 'c' no rtn on 'e' key
+       JMP  ENDBP2
+ENDBNS BLWP @HONK
+       JMP  ENDBP1
+ENDBP2 MOVB R10,@DRRD    Set dr# to work with
+       MOVB R10,@DRWT
+       CLR  @SSEC        Get sector 0 of disk
+       BL   @GETSEC
+       DATA SEC0
+       DATA DRRD
+       JMP  ENDBNS
+       LI   R0,SEC0      Test if names match
+       LI   R1,BACKN
+       LI   R2,6
+ENDBP3 CB   *R0+,*R1+    Test base names
+       JNE  ENDBNS       Not equal
+       DEC  R2           All tested
+       JNE  ENDBP3       Try next pair
+       LI   R1,'1 '      Test for disk #1
+       C    *R0,R1       Is it equal
+       JNE  ENDBNS       No request again
+       INC  @SSEC        Now get sec1
+       BL   @GETSEC
+       DATA SEC0
+       DATA DRRD
+       JMP  ABORTF
+       MOV  @BAKCNT,@SEC0+250 Save total # of disks in set
+       BL   @WRTSEC      Write sector back
+       DATA SEC0
+       DATA DRWT
+       JMP  ABORTF
+* Backup was successful so now we must remove to update needed flag
+* from all files
+*
+       BL   @CLRLN       REMOVE ANY MESSAGE ON THIS LINE
+       DATA MCL*19,1
+       BLWP @VMBW        RESETTING FLAGS MESSAGE
+       DATA MCL*19+1
+       DATA RUFLG
+       DATA 15
+       CLR  @DONEP       RESET PATHS DONE FLAG
+       BLWP @SETPR       GET TO ROOT DIR
+RSETUP LI   R15,FCBP     Pointer list to files
+RSTUP1 MOV  *R15,R1      Get file sector #
+       JEQ  RSTUP2       If zero done WITH THIS DIR
+       BL   @GETSCW      Get file sector
+       DATA WBUF1
+       DATA WDRRD
+       JMP  ABORTW
+       MOVB @WBUF1+12,R0 Get file info byte
+       SZC  @UPBIT,R0    Turn bit off
+       MOVB R0,@WBUF1+12
+       MOV  *R15+,R1     GET SECTOR # OF FILE AGAIN
+       BL   @WRTSCW      WRITE SECTOR BACKOUT
+       DATA WBUF1
+       DATA WDRWT
+       JMP  ABORTW
+       JMP  RSTUP1
+RSTUP2 BLWP @SETPA       NOW GET NEXT DIR
+       MOV  @DONEP,R1    ALL DIRS DONE
+       JEQ  RSETUP       NO
+*
+EXIT   BL   @CLRLN
+       DATA MCL*12,9     CLEAR LINES 12-20
+       BLWP @BEEP
+       BLWP @VMBW
+       DATA MCL*19+16
+EXITD  DATA BAKDNM
+       DATA 8
+EXTERR LWPI WS2
+       BLWP @VMBW        Exit messages
+       DATA MCL*22+13
+       DATA PROM         MDM5
+       DATA 6
+       BLWP @VMBW
+       DATA MCL*22+21
+       DATA PROQ
+       DATA 4
+       BLWP @BEEP
+       JMP  EXIT1
+EXITN  BLWP @HONK        ERROR tone
+EXIT1  BL   @GETKY1
+       CI   R1,>5100     Q key
+       JEQ  EXIT3        Yes exit to TI screen
+       BL   @SOLID
+       B    @RELOAD      Go reload
+EXIT3  B    @ABORT
+ABORTW
+ABORTF BL   @STERR
+       DATA ABRT
+       DATA 15
+NOFHNK BLWP @HONK        Sound error
+       JMP  EXTERR       ERROR EXIT
+*
+NEWDSK INC  @ACTDR       Make next dr active
+       C    @ACTDR,@DRTOT Reached final drive
+       JNE  NEWDK1       NO
+       SETO @BD1IN       SET FLAG THAT 1ST BACKUP DISK IS GONE
+       CLR  @ACTDR       CLEAR to 1st active drive
+       BLWP @BACKP       GET NEW DISKS
+       RT
+*
+NEWDK1 BLWP @BACKNO      SETUP NEW DISK WITHOUT ASKING
+       RT
+*

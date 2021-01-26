@@ -1,0 +1,198 @@
+*** MODULE NAME: SEARCH ***
+*  searches for a file in _all_ directories
+*
+SR01   SETO @IGASUB           ignore subdirs - just get drive type&number
+       BLWP @GETDRV
+       DATA >0000             main disk
+       CLR  @IGASUB           reset flag
+       BL   @VDPFIL           write spaces to screen
+       DATA 5*SCRWID,16*SCRWID,>2000
+       BL   @CLRCOM
+       BL   @SHOW$1
+       DATA SRT1,19*SCRWID+1
+       BL   @FILL
+       DATA GENBUF+>80,12,0
+       LI   R0,19*SCRWID+11
+       LI   R1,GENBUF+>82-1
+       BLWP @INPUT
+       DATA 10,>202E          10 max, space and period illegal
+       JNC  $+6
+       B    @LEV0RT           exit key used, so exit
+*  got the filename. if floppy, go away and execute a whole different
+*  routine. if hard, stay right here.
+       BL   @VDPFIL           first, clear filename from screen
+       DATA 19*SCRWID+1,20,>2000
+       BL   @CLRCOM
+       CLR  @GENBUF+>80            indicate nothing found yet
+       LI   R6,5*SCRWID+1     screen position
+       ABS  @HRDS             hard or floppy
+       JNE  $+6               hard
+       B    @SR08             floppy - different, to say the least
+       LI   R1,PATHS
+       MOVB @H00,*R1+
+       MOV  R1,@GENBUF+4
+       CLR  R7                pointer into GENBUF
+       CLR  @GENBUF            root directory
+       CLR  @GENBUF+2          first subdir
+       JMP  SR05A             search the root directory first
+SR02   MOV  @GENBUF(R7),R0     get sector #
+       LI   R1,TEMP
+       BLWP @RSHRD
+       DATA SR02
+       MOV  @GENBUF+2(R7),R2
+       INCT @GENBUF+2(R7)
+       MOV  @TEMP+28(R2),R0   get sector # of new thing
+       JEQ  SR07
+       BL   @DUPCOD
+       BL   @SHOHED
+       DATA 0,VOLUME
+       MOV  @S1BUFF+254,R7    restore
+*   now, see if we can find the file
+SR05A  LI   R3,S1BUFF
+       CLR  @S1BUFF+254       make sure we see the end
+SR06   MOV  *R3+,R0           get sector number
+       JEQ  SR02              no more files - continue in next directory
+       LI   R1,TEMP           temp buffer
+       BLWP @RSHRD            read a sector
+       DATA SR06
+       LI   R2,GENBUF+>82
+       BL   @COMP$            same?
+       JNE  SR06              nope
+*  found file
+       SETO @GENBUF+>80            we found it
+       MOV  R6,R1             vdp address
+       BL   @WRITEV           set vdp write address
+       LI   R0,PATHS          pathname
+       MOVB *R0+,R1           get length
+       JEQ  $+10              null length
+       SRL  R1,8              to lsby
+       MOVB *R0+,*R8          write char to vdp
+       DEC  R1                any more?
+       JNE  $-4               yes
+       LI   R0,GENBUF+>82
+       LI   R1,10
+       MOVB *R0+,*R8          write char to vdp
+       DEC  R1                any more?
+       JNE  $-4               yes
+       AI   R6,SCRWID         next line
+       CI   R6,21*SCRWID+1    at end of screen?
+       JNE  SR02              no - continue in next directory
+       BL   @CONABO           continue or abort
+       BL   @CLRCOM
+       BL   @VDPFIL           write spaces to screen
+       DATA 5*SCRWID,16*SCRWID,>2000
+       LI   R6,5*SCRWID+1
+       JMP  SR02              continue in next directory
+SR07   AI   R7,-6             previous entry
+       JGT  SR02
+       JEQ  SR02
+       BL   @VDPFIL           blank out pathname
+       DATA 6,SCRWID-6,>2000
+       JMP  SR16              continue with exit routine
+*
+* search floppy disk
+SR08   MOVB @H00,@PATHS       root directory
+       LI   R7,VOLUME+20      pointer to first subdir name
+       LI   R0,1              root directory
+       JMP  SR12
+SR09   MOV  @10(R7),R0        get pointer
+       JEQ  SR15              end - no more directories
+       LI   R0,PATHS          main pathname
+       MOVB @H00,*R0+         length of 0
+       LI   R1,10             10 characters
+       MOV  R7,R2
+SR10   MOVB *R2+,*R0
+       CB   *R0+,@H20         space?
+       JEQ  SR11              yes
+       AB   @H01,@PATHS       increment length
+       DEC  R1                any more to check?
+       JNE  SR10
+SR11   AI   R7,10             point to sector pointer
+       MOV  *R7+,R0           get number
+SR12   MOV  R0,@DIRAUS        set it
+       BL   @V1LOAD           load the volume sectors
+       MOV  R7,@S1BUFF+254    save
+       BL   @SHOHED           show the header
+       DATA 0,VOLUME
+       MOV  @S1BUFF+254,R7    restore
+*   now, see if we can find the file
+       LI   R3,S1BUFF
+       CLR  @S1BUFF+254       make sure we see the end
+SR13   MOV  *R3+,R0           get sector number
+       JEQ  SR14              no more files - continue in next directory
+       LI   R1,TEMP           temp buffer
+       BLWP @RSCPU            read a sector
+       DATA SR13
+       LI   R2,GENBUF+>82
+       BL   @COMP$            same?
+       JNE  SR13              nope
+       SETO @GENBUF+>80            we found it
+       LI   R1,TEMP
+       BL   @VMBR
+       DATA 0,6
+       MOV  R6,R1             vdp address
+       BL   @WRITEV           set vdp write address
+       LI   R1,TEMP
+       LI   R2,6
+       BL   @VMBW2
+       LI   R1,PATHS
+       MOVB *R1+,R2           get length of pathname
+       JEQ  SR13A
+       SRL  R2,8
+       BL   @VMBW2
+       MOVB @DECMAL,*R8
+SR13A  LI   R1,GENBUF+>82
+       LI   R2,10
+       BL   @VMBW2
+       AI   R6,SCRWID         next line
+       CI   R6,21*SCRWID+1    at end of screen?
+       JNE  SR14              no - continue in next directory
+       BL   @CONABO           wait for press enter
+       BL   @CLRCOM
+       BL   @VDPFIL           write spaces to screen
+       DATA 5*SCRWID,16*SCRWID,>2000
+       LI   R6,5*SCRWID+1
+SR14   CI   R7,VOLUME+56      at end of subdirs?
+       JNE  SR09              nope
+SR15   BL   @VDPFIL           blank out pathname
+       DATA 6,10,>2000
+*
+* exit routine - print message if couldn't find the file
+SR16   ABS  @GENBUF+>80            found any?
+       JNE  SR17
+       BL   @SHOW$1
+       DATA SRT2,5*SCRWID+1
+SR17   BL   @SHOW$1
+       DATA SRT3,3*SCRWID+1
+       LI   R11,LEV0RT
+       B    @CONABO
+*
+* this code broken out from original so that PRTTREE can use it
+*
+DUPCOD MOV  R11,@DUPRTN+2
+       AI   R7,6              next entry
+       MOV  R0,@GENBUF(R7)
+       CLR  @GENBUF+2(R7)
+       MOV  R0,@DIRAUS        set directory au number
+       BL   @V1LOAD           load volume sectors
+*  directory name is in volume
+*  put name into PATHS
+       LI   R0,VOLUME
+       MOV  @GENBUF-2(R7),R1   get destination
+       LI   R2,10             max length
+SR04   MOVB *R0+,*R1
+       CB   @H20,*R1+         space?
+       JEQ  SR05              yes
+       DEC  R2
+       JNE  SR04
+       INC  R1                correct
+SR05   MOV  R1,@GENBUF+4(R7)   indicate position in paths
+       DEC  R1                back up
+       MOVB @DECMAL,*R1       write a period
+       LI   R0,PATHS
+       S    R0,R1             get length
+       SWPB R1
+       MOVB R1,@PATHS         set length
+       MOV  R7,@S1BUFF+254    save (since only 127 files, +254 good place)
+DUPRTN B    @0
+*

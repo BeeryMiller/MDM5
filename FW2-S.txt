@@ -1,0 +1,1394 @@
+       UNL
+********************************************************************************
+*
+*      FORMAT TRACK ROUTINE (WINCHESTER)
+*
+*      INPUT PARMS ARE
+*
+*      R0   RETURN ERROR CODE
+*      R2   HEAD HOLDER
+*      R3   DRIVE NUMBER                    (BASE 1)
+*      R4   # OF 256 BYTE SECTORS PER TRACK (BASE 1)
+*      R5   # OF HEADS                      (BASE 1)
+*      R6   # OF CYLINDERS                  (BASE 1)
+*      R7   FFFF IF BUFFERED STEP, 0 IF 3MS STEP
+*      R8   INTERLEVE (USE DEFAULT IF 0) (LATER SECTOR HOLDER) (BASE 1)
+*      R9   INTERLEVE HOLDER
+*     (R9 on entry holds the location of the volume name)
+*      R10  CYLINDER HOLDER
+*      R12  CRUBASE OF CONTROLLER ALREADY SET UP
+*      R13  RETRIES LEFT
+*      R14  >FFFF TO BOMB ON FATAL ERROR, >0000 TO KEEP GOING
+*
+********************************************************************************
+*
+*     REGISTERS FOR LOW LEVEL ACCESS
+*      R0- LBYTE BUFFER ADDRESS
+*      R1- MBYTE BUFFER ADDRESS
+*      R2- HBYTE BUFFER ADDRESS
+*      R3- SECTOR #
+*      R4- CYL/HEAD (HI 4 NIBS= CYL/ LOW 4 NIBS= HEAD)
+*      R5- CYLINDER LOW BYTE
+*      R6- SECTOR COUNT
+*      R7- HI 4 NIBS= RETRY COUNT(INVERTED) / LOW 4 NIBS= FLOPPY ACCESS ZEROS)
+*      R8- MODE REGISTER (BUFFER STEP) E0= NO BUFF E7= BUFF
+*      R9- INT REGISTER = >A5
+*
+************************************************************
+*      NEW ORDER OF OPERATION
+*      GET VARIABLES
+*      FORMAT A TRACK
+*      DO MULTIPLE SECTOR WRITE
+*           VERIFY WITH MULTIPLE SECTOR READ
+*      IF ERROR DO SINGLE SECTOR READ TO FIND BAD SECTOR
+*           UPDATE BITMAP FOR BAD SECTOR
+*      RESET DC ON EXIT
+*
+************************************************************
+*
+       AORG >F000
+       DEF  START,SFIRST,SLOAD,SLAST,SSLAST
+SLOAD
+SFIRST B    @START
+SECADD EQU  5                 BYTES PER SECTOR
+SLOMOD EQU  >E700             MODE REG 3.2 MS STEP RATE
+FSTMOD EQU  >E000             BUFFERED SEEK
+DATREG EQU  >4FD2
+CMDREG EQU  >4FD6
+STATRG EQU  >4FD4
+SCRWID EQU  40
+ERLN   EQU  21
+*** MODULE NAME - FORMATWIN ***
+*
+* format a winchester
+* drive number in MAIND
+* ask for: volume
+*          sectors / track (default = 32)
+*          heads
+*          cylinders
+*          reserved directory/file sectors
+*          pre-comp
+*          reduced write current
+*          verification retry 0-15
+*          interlace
+*          step rate (0-7)
+*
+       EVEN
+* TABLE FOR PATCHING FW/S TO THE CORRECT ROUTINE ADDRESSES IN MDM5
+PATTAB DATA P1           *UTIL               1
+       DATA FORWN1+2     * MAIN WS           2
+       DATA P2+2         *CLRCOM             3
+       DATA P3+2         *SCRGEN             4
+       DATA P4+2         *INPUT              5
+       DATA P4A+2        *CONV32             6
+       DATA P4D+2        *BINDEC             7
+       DATA P4B+2        *BINDEC             8
+       DATA P4C+2        *VDPFIL             9
+       DATA P5+2         *INPUT              10
+       DATA FW01B+2      *IGNFER             11
+       DATA P6+2         *UTIL               12
+       DATA FW01C+2      *ASCBIN             13
+       DATA P7+2         *COMB               14
+       DATA FW04+2       *CLTOP              15
+       DATA P8+2         *SCRGEN             16
+       DATA P9+2         *INPUT              17
+       DATA P10+2        *COMPLP             18
+       DATA P11+2        *LEV0RT             19
+       DATA FW04A+2      *CLTOP              20
+       DATA P12+2        *CLRCOM             21
+       DATA P13+2        *SHOW$1             22
+       DATA P13A1+2      *SHOW$1             23
+       DATA P13A2+2      *SHOW$1             24
+       DATA P13A+2       *SCRGEN             25
+       DATA P13B         *TTXT1              26
+       DATA P13C         *TADDR1             27
+       DATA P14+2        * MAIn temp         28
+       DATA P15+2        * VMBW              29
+       DATA P16+2        * VMBW              30
+       DATA P17+2        * CONV32            31
+       DATA P18+2        * CONV32            32
+       DATA P20+2        * BINDEC            33
+*      DATA WE5D1+2      * $SHOW1            34
+*      DATA WE5D2+2      * COMNB             35
+       DATA 0            END OF TABLE
+*
+*
+FWTA1  DATA 0*SCRWID+1,3*SCRWID+9,5*SCRWID+21          vol,t/s,heads
+       DATA 7*SCRWID+17,9*SCRWID+1,11*SCRWID+4           cyl,reserved,pre-comp
+       DATA 13*SCRWID+5                                    reduced write
+       DATA 15*SCRWID+1,17*SCRWID+17,19*SCRWID+11          ver,inter,step
+FWTA2  DATA 12*SCRWID+3,13*SCRWID+3,14*SCRWID+3
+       DATA 15*SCRWID+3,16*SCRWID+3
+* CHANGED TO ALLOW FOR UP TO 5 DIGITS
+FWDEF  BYTE 2,'3','2',' ',' ',' ' sectors/track
+       BYTE 0,0,0,0,0,0       heads
+       BYTE 0,0,0,0,0,0       cylinders
+FILRS  BYTE 0,0,0,0,0,0       reserved sectors
+FILPR  BYTE 0,0,0,0,0,0       dummy space for pre-comp
+FILWC  BYTE 0,0,0,0,0,0       dummy space for reduced write current
+       BYTE 1,'8',' ',' ',' ',' '        verification
+       BYTE 1,'3',' ',' ',' ',' '       interlace
+       BYTE 1,'1',' ',' ',' ',' '        step rate
+H00    BYTE 0
+SPACE  BYTE ' '
+FWTT1  BYTE 5
+       TEXT 'WDS1.'
+       BYTE 21
+       TEXT 'Sectors per track? 32'
+       BYTE 6
+       TEXT 'Heads?'
+       BYTE 10
+       TEXT 'Cylinders?'
+       BYTE 26
+       TEXT 'Reserved dir/file sectors?'
+       BYTE 23
+       TEXT 'Write pre-compensation?'
+       BYTE 22
+       TEXT 'Reduced write current?'
+       BYTE 29
+       TEXT 'Sector verification retry? 8 '
+       BYTE 12
+       TEXT 'Interlace? 3'
+       BYTE 19
+       TEXT 'Step rate (0-7)? 1 '
+FWTT2  BYTE 34
+       TEXT 'WARNING:  If you proceed with this'
+       BYTE 36
+       TEXT 'operation, ALL data on the hard disk'
+H21    BYTE 33
+       TEXT 'will be lost. Type in operational'
+       BYTE 34
+       TEXT 'code from the hard and floppy disk'
+       BYTE 18
+       TEXT 'controller manual.'
+FORTXT BYTE 6
+       TEXT 'FORMAT'
+FWTT6  BYTE 14
+       TEXT 'Bad sectors: 0'
+FWTT7  BYTE 22
+       TEXT 'Formatting cylinder: 0'
+FWTT8  BYTE 10
+       TEXT 'Verifying:'
+       EVEN
+
+DRSAV  DATA 0                 SAVED DRIVE #
+FWDAT  DATA 0                 s/t
+       DATA 0                 heads
+CYLS   DATA 0                 cyl
+RESVS  DATA 0                 reserved sectors
+WPRM   DATA 0                 write precomp
+REWC   DATA 0                 reduced write current
+       DATA 0                 verify retry
+       DATA 0                 inter.
+       DATA 0                 step
+*
+* FWTBYN DATA >590D,FW02,>4E4E,FW03,>8F8F
+P1     DATA 0,0               *UTIL
+* ON ENTRY R6= THE TABLE ADDRESS IN MAIN MDM5 FOR PATCH TABLE
+START  MOV  R11,@RETSAV
+       LI   R4,PATTAB    ADDRESSES TO PATCH
+START1 MOV  *R4+,R5
+       MOV  R5,R5        END OF TABLE
+       JEQ  FORWIN       YES
+       MOV  *R6+,*R5
+       JMP  START1
+FORWIN MOV  R3,R0        GET DRIVE #
+       MOV  R3,@DRSAV
+       AI   R0,>0030     MAKE ASCII
+       SWPB R0
+       MOVB R0,@FWTT1+4  FILL IN DRIVE # TO FORMAT
+FORWN1 LWPI >0           *CALLERS VDP WS
+*
+P2     BL   @0           *CLRCOM           clear command line
+P3     BL   @0           *SCRGEN
+       DATA FWTT1,FWTA1,10
+*   get volume name
+       LI   R0,0*SCRWID+6
+       LI   R1,FWVOL
+       MOVB @H00,*R1
+P4     BLWP @0               *INPUT
+       DATA 10,>202E
+       JOC  FWABT              abort used - get out
+       JMP  FORWN2
+FWABT  B    @FW01B
+
+*
+FORWN2 LI   R4,FWDEF          defaults
+       LI   R5,3*SCRWID+28    starting screen location
+       LI   R6,9              ask nine questions
+       LI   R7,FWDAT
+FW01   MOV  R5,R0             screen address
+       CI   R6,5              on pre-comp
+       JEQ  FW01E             yes
+       CI   R6,6              on reserved
+       JNE  FW01D             no
+* IF ON RESERVED MUST CALC THe # based upon total sectors 5 meg is 512 sector
+* 10 meg = 1024 etc. over 80 meg. =16383 max. result is shifted right 6
+SETRS  LI   R0,FWDAT          get s/t,heads,cyl
+       MOV  *R0+,R11          s/t
+       MOV  *R0+,R12          heads
+       MOV  *R0+,R13          cyl
+       MPY  R12,R13           heads*cyl
+       MOV  R14,R13           get result
+       MPY  R11,R13           times s/t (r13 = high total sect r14 = low)
+       LI   R0,16383          max number of reserved
+       CI   R13,4             over 80 meg.
+       JGT  SETRS1            yes
+       LI   R0,8192           set for 80 meg default
+       CI   R13,2             over 40 meg.
+       JGT  SETRS1            yes
+       SRL  R0,1              set to 4096 for 40 meg
+       CI   R13,1             over 20 meg.
+       JGT  SETRS1            yes
+       SRL  R0,1              set to 2048 for 20 meg
+       CI   R13,1             over 10 meg.
+       JEQ  SETRS1            yes
+       SRL  R0,1              set to 1024 for 10 meg.
+       CI   R14,>4C80          over 5 meg.
+       JH   SETRS1            yes
+       SRL  R0,1              set to 512 for 5 meg.
+SETRS1 LI   R1,TEMP+1         save of converted ascii #
+P4A    CLR  @0                *CONV32   16 BIT CONVERSION
+P4D    BLWP @0                *BINDEC  CONVERT #
+* NOW LEFT JUSTIFY RESULT
+       BL   @LEFT
+       LI   R2,FILRS
+       LI   R11,6
+SETRS2 MOVB *R1+,*R2+
+       DEC  R11
+       JNE  SETRS2
+       JMP  FILLPX
+FW01E  MOV  @FWDAT+4,R0       figure pre-comp based upon cylinders
+       SRL  R0,2
+       MPY  @THREE,R0
+       AI   R1,>000F
+       SRL  R1,4              CLEAR LOW
+       SLA  R1,4              MAKE BACK TO 3/4 NORMALIZED
+       MOV  R1,R0             # to convert
+       LI   R1,TEMP+1         storage
+P4B    BLWP @0                *BINDEC           convert #
+* NOW LEFT JUSTIFY RESULT
+       BL   @LEFT
+       LI   R2,FILPR          FILL IN PRE-COMP FIELD
+       LI   R0,FILWC          AND WRITE CURRENT
+       LI   R11,6
+FILLPW MOVB *R1,*R2+
+       MOVB *R1+,*R0+
+       DEC  R11
+       JNE  FILLPW
+FILLPX MOV  R5,R0
+FW01D  LI   R1,TEMP           buffer for temp storage
+       MOVB *R4+,*R1+
+       MOVB *R4+,*R1+
+       MOVB *R4+,*R1+
+       MOVB *R4+,*R1+
+       MOVB *R4+,*R1+
+       MOVB *R4+,*R1
+       LI   R1,TEMP           back up to start
+P5     BLWP @0                *INPUT            input a string
+       DATA 5,'. '
+       JNC  FW01C             abort not used
+       CI   R0,>8F00          f9?
+       JEQ  FW01B             yes
+       CI   R0,>8B00          up arrow?
+       JNE  FW01ER            no
+       CI   R6,9              top question?
+       JNE  P5A               NO
+       B    @FORWN1           YES ASK VOL AGAIN
+P5A    INC  R6
+       DECT R7
+       AI   R5,-SCRWID*2
+       AI   R4,-12            since it already advanced once, back up twice
+       LI   R1,TEMP
+FW01J  JMP  FW01
+FW01B  CLR  @0                *IGNFER    don't ignore format errors
+P6     B    @0                *UTIL             utility menu
+FW01ER AI   R4,-6             IF BACK INPUT BACKUP IN FWDEF
+       JMP  FW01
+FW01C  BLWP @0                *ASCBIN           ascii to binary
+       DATA TEMP              buffer location
+       DATA FW01ER            error location
+       CI   R6,6              ON RESERVED
+       JNE  VERQ              NO
+       CI   R0,16383          MAKE SURE ITS IN RANGE
+       JLE  PREGUD
+       MOV  R5,R0
+       AI   R4,-6
+       B    @SETRS
+VERQ   CI   R6,3              ON VERIFY
+       JNE  NOVER             NO
+       CI   R0,15             MAXIMUM VALUE IS 15 0->F
+       JLE  PREGUD            IF < OR EQUAL ITS OK
+ASKAGN MOV  R5,R0             BAD TRY AGAIN
+       AI   R4,-6
+       JMP  FW01D
+NOVER  CI   R6,5              JUST DO PRE-COMP
+       JNE  WRITQ             NO
+       C    R0,@CYLS          MAKE SURE PRE-COMP IS =<TOTAL CYL.
+       JH   NOVER1            IF HIGH NO GOOD
+*
+       JMP  PREGUD            YES
+NOVER1 MOV  R5,R0             TRY AGAIN
+       AI   R4,-6
+       B    @FW01E            YES CAN NOT BE
+WRITQ  CI   R6,4              JUST DO REDUCED WRITE
+       JNE  STEPQ             NO
+       C    R0,@CYLS          MAKE SURE REDUCD =<TOTAL CYL.
+       JH   NOVER1
+       JMP  PREGUD
+*
+STEPQ  CI   R6,1              just do step rate
+       JNE  PREGUD            no
+       CI   R0,7              max value is 7
+       JLE  PREGUD            its OK
+       JMP  ASKAGN
+*
+PREGUD MOV  R0,*R7+           save for future use
+       AI   R5,SCRWID*2       two lines down
+       DEC  R6                any more?
+       JNE  FW01J             yah
+FW04   BL   @0                *CLTOP            clear TOP of screen
+P8     BL   @0                *SCRGEN
+       DATA FWTT2,FWTA2,5     warning message
+       LI   R0,22*SCRWID+17
+       LI   R1,TEMP
+       CLR  *R1
+P9     BLWP @0                *INPUT
+       DATA 6,>0000           max length=6, no invalid keys
+       JOC  FW01B
+       LI   R1,TEMP           buffer
+       LI   R2,FORTXT         >06,'FORMAT'
+       LI   R12,7             seven chars
+P10    BL   @0                *COMPLP           equal?
+       JEQ  FW04A             yes
+*   procedure code entered not correct. abort operation
+P11    B    @0                *LEV0RT
+*
+FW04A  BL   @0                *CLTOP            ERASE SCREEN
+P12    BL   @0                *CLRCOM
+P13    BL   @0                *SHOW$1
+       DATA FWTT7,18*SCRWID+1                FORMATTING CYLINDER
+P13A1  BL   @0                *SHOW$1
+       DATA FWTT8,20*SCRWID+1                VERIFYING:
+*
+P13A2  BL   @0                *SHOW$1
+       DATA FWTT6,20*SCRWID+20               BAD SECTORS:
+P13A   BL   @0                *SCRGEN   SHOW MYARC SCREEN
+P13B   DATA 0                 *TTXT1
+P13C   DATA 0                 *TADDR1
+       DATA 6
+       LIST
+*
+* NOW BEGIN THE FORMAT
+P14    LWPI 0                 *MAIN TEMP
+       MOVB @>8002,@MAPSAV
+       MOVB @CBHBA,@>8002
+       LI   R0,FWDAT
+       MOV  *R0+,R4      SECTORS/TRK
+       SWPB R4                SAVE FOR MULT. SECTOR WRITE
+       MOVB R4,@MSTRK
+       MOVB R4,@MSTRK1
+       SWPB R4
+       MOV  *R0+,R5      HEADS
+       MOV  *R0+,R6      CYLINDERS
+* CALCULATE TOTAL SECTORS
+* NOW FIGURE SECTORS/AU
+       CLR  R1                SECTORS PER AU (BASE 0)
+       MOV  R6,R10            # OF CYLINDERS
+       MPY  R5,R10            TIMES HEADS PRODUCT IN R11
+       MOV  R11,R10
+       MPY  R4,R10            TIMES SECTORS PER TRACK
+       MOV  R10,@TSH          SAVE HIGH WORD
+       MOV  R11,@TSL          SAVE LOW WORD
+*
+GETAU  MOV  R10,R10           PROBLEM TOO MANY AU?
+       JEQ  GETAU2
+* TO BE HERE, MULTIPLE SECTORS PER AU
+GETAU1 SLA  R1,1              SHIFT IN A 1
+       INC  R1
+       SRL  R11,1
+       SRL  R10,1
+       JNC  GETAU
+       ORI  R11,>8000
+       JMP  GETAU
+*
+GETAU2 CI   R11,>F800         MAX AU,S
+       JH   GETAU1
+       MOV  R11,@TOTAU        SAVE TOTAL AU'S
+       MOV  R1,@SPAU0         SAVE SECTORS PER AU
+       INC  R1
+       MOV  R1,@SPAU1         SAVE S/AU BASE1
+       DEC  R1
+* NOW GET SECTOR 1 OF BIT MAP R1 CONTAINS THE NUMBER OF SECTORS
+*  PER AU BASE 0
+       LI   R2,SECBUF         CLEAR SECTOR BUFFER
+SECB1  CLR  *R2+
+       CI   R2,SECBUF+256     ALL CLEARED
+       JNE  SECB1
+       LI   R10,SUTBL
+       LI   R2,SECBUF
+       MOV  R1,R9
+       JEQ  SECB3
+SECB2  AI   R10,-10
+       SRL  R9,1
+       JNE  SECB2
+SECB3  MOV  *R10+,*R2+
+       CI   R2,SECBUF+10
+       JL   SECB3
+       LI   R2,>1000+>4000
+       LI   R10,SECBUF
+       SWPB R2
+       MOVB R2,@>8C02
+       SWPB R2
+       MOVB R2,@>8C02
+       LI   R15,256
+P15L   MOVB *R10+,@>8C00      WRITE BYTE
+       DEC  R15
+       JNE  P15L
+*
+       CLR  R1                NULL
+       LI   R2,>1100+>4000    START OF VDP REST
+       LI   R15,256*30        NULL FILL THE REST
+SECB5  SWPB R2
+       MOVB R2,@>8C02
+       SWPB R2
+       MOVB R2,@>8C02
+       MOVB R1,@>8C00         WRITE A NULL
+       INC  R2                NEXT LOCATION
+       DEC  R15               ALL DONE
+       JNE  SECB5
+P17    SETO @0                CONV32 32 BIT CONVERSION
+* NOW FIGURE THE INTERNAL # OF RESERVED SECTORS
+       MOV  *R0+,R7           GET RESERVED SECTORS
+       CI   R7,>3FC0          WITHIN MAX RANGE
+       JGT  SETRQ             ABOVE
+       LI   R8,>003F          TEST FOE LOW 6 BITS
+       CZC  R8,R7             ANY LOW BITS SET (1-63)
+       JEQ  SETRQ             NO
+       AI   R7,64             ROUND UP TO NEXT 64
+SETRQ  SRL  R7,6              SHIFT BY 6
+       SWPB R7
+       MOVB R7,@RSSAV         SAVE REQUESTED RESERVE
+       MOV  *R0+,R8           GET PAST  PRECOMP
+       MOV  *R0+,R8           GET REDUCED WRITE CURRENT
+       SRL  R8,3              SHIFT BY 3
+       SWPB R8
+       MOVB R8,@WCSAV
+* NOW GET THE VERIFICATION RETRY COUNT
+       MOV  *R0+,R8
+       INV  R8           MUST BE INVERTED
+       SLA  R8,12             MOVE IT TOP 4 BITS IN BYTE
+*      MOVB R8,@MTRY          SET MAX. RETRY FOR MULT. READ
+       MOVB R8,@MTRYR         SET FOR SINGLE READ
+       MOV  *R0+,R8      INTERLACE
+       MOV  *R0+,R7      STEP rate
+       SWPB R7
+       MOVB R7,@RATSAV        save rate for sector zero
+       AI   R7,>E000          add other flags
+*
+BUFON  MOVB R7,@MMODE         SAVE FOR MULT. SECTOR WRITE
+       MOVB R7,@MMODE1        SAVE FOR MULT. SECTOR READ
+       MOVB R7,@MMODE2        SAVE FOR SINGLE SECTOR READ
+       MOVB R7,@STMODE+2      save for stmode routine
+*
+       SETO R14               bomb on fatal error
+       SBZ  1                 RESET CHIP
+       SBO  0                 TURN ON THE CARD
+       SBZ  4                 GET TO CRU INPUT
+       SBO  1                 SET CHIP ON
+* SETUP 8K BUFFER FOR INIT DATA
+       LI   R0,>D7A5          MFM MAX.FLUX
+       LI   R15,>0800
+       AI   R12,>0012
+       LI   R11,>5400
+SET1   LDCR R15,5
+SET2   MOV  R0,*R11+
+       CI   R11,>5800
+       JNE  SET2
+       AI   R15,>0100
+       LI   R11,>5400
+       CI   R15,>1000
+       JNE  SET1
+       LI   R15,>0800
+       LDCR R15,5
+       LI   R1,SVFM
+SET3   MOV  R0,*R1+           SAVE >5400->5500
+       CI   R1,SVFM+256
+       JNE  SET3
+       ANDI R12,>FF00
+* FIRST GET THE SECTOR INCREMENT
+       LI   R9,4              ASSUME AN INTERLEAVE OF 4
+       MOV  R8,R8             IS IT 0?
+       JEQ  INT4              YES, SO USE DEFAULT
+       LI   R0,>0001          CHECK INTERLEAVE VALIDITY
+       C    R8,R4
+       JL   CONTIN            BAD INTERLEAVE
+       B    @ERROR
+
+CONTIN MOV  R8,R9             USE R9 AS THE INTERLEVE AMOUNT USED
+* NOW INIT THE TABLE
+INT4   LI   R0,>5407
+       MOV  R4,R1             # OF SECTORS
+       SETO R2                SET TO 1'S
+INTTAB MOVB R2,*R0
+       AI   R0,SECADD
+       DEC  R1
+       JNE  INTTAB
+* NOW PUT IN THE SECTOR NUMBERS
+       LI   R0,>0001          START WITH 0
+       LI   R1,>5407          START HERE
+       MOV  R4,R2             # OF SECTORS TO DO
+       MPY  @BYPRSC,R9        BYTES PER SECTOR IN R10
+       MOV  R10,R9
+       MOV  R4,R10
+       MPY  @BYPRSC,R10       R11 BYTES IN THIS WRITE
+       MOV  R11,R10
+       AI   R11,>5404
+*  R9 MSB CONTAINS INCRMENT, R0 CONTAINS THE SECTOR #
+WRISEL MOVB *R1,*R1           USED?
+       JLT  WRIS00            NOT YET
+       AI   R1,SECADD
+       JMP  WRIS01
+
+WRIS00 MOVB R0,*R1
+       AI   R0,>0100          GET THE FORM IN SECTOR/ECC,SIZE
+       DEC  R2
+       JEQ  WRIS02
+       A    R9,R1             SET R1 UP FOR NEXT TIME
+WRIS01 C    R1,R11
+       JL   WRISEL
+       S    R10,R1
+       JMP  WRISEL
+
+*  NOW FILL IN THE SEC SIZE AND ECC TYPE
+WRIS02 LI   R1,>5408
+       MOV  R4,R2
+SCSZLP MOVB @CBH01,*R1
+       AI   R1,SECADD
+       DEC  R2
+       JNE  SCSZLP
+*
+* NOW PERFORM THE RESTORE ON THIS DRIVE
+WE1    LI   R1,FORMTB         INIT TABLE
+       LI   R2,DATREG         AND ADDRESS POINTERS
+       MOVB *R1+,@CMDREG      SET REGISTER POINTER TO MODE REG
+       BL   @STMODE           SET THE MODE BASED ON R7
+       MOVB R0,*R2            SET MODE
+       MOVB *R1+,*R2          SET INT REGISTER
+       BL   @SELDRV
+       BL   @WAIT
+       DATA WE1
+       MOVB *R1+,@CMDREG      NOW PERFORM THE RESTORE
+       BL   @WAIT
+       DATA WE1
+
+       CLR  R10               # OF CYLINDERS
+NXCYLN LI   R0,>5404
+* GET THE IDENT BYTE
+       LI   R9,>FE00
+       CI   R10,256
+       JL   CYL000
+       LI   R9,>FF00
+       CI   R10,512
+       JL   CYL000
+       LI   R9,>FC00
+       CI   R10,768
+       JL   CYL000
+       LI   R9,>FD00
+CYL000 SWPB R10
+       MOV  R4,R8             SECTOR/TRACK
+CYLOOP MOVB R9,*R0+
+       MOVB R10,*R0
+       AI   R0,SECADD-1
+       DEC  R8
+       JNE  CYLOOP
+       SWPB R10
+
+HEADLP CLR  R9                # OF HEADS
+NXHDLN LI   R0,>5406
+       SWPB R9
+       MOV  R4,R8             S/T
+       MOVB R9,R1
+       SWPB R9
+       SRL  R1,4
+       MOVB R10,R1
+       SLA  R1,4
+HDLOOP MOVB R1,*R0
+       AI   R0,SECADD
+       DEC  R8
+       JNE  HDLOOP
+*
+* NOW SET UP THE 92X4 REGISTERS FOR FORMAT
+*
+WE2    LI   R1,FORMTC         REINIT POINTER
+       MOVB *R1+,@CMDREG      PERFORM ALL I/O OUT OF MEMORY AT 0
+       MOVB *R1+,*R2          USE BUFFER AT 0
+       MOVB *R1+,*R2
+       MOVB *R1+,*R2
+       BL   @SELDRV
+       BL   @WAIT
+       DATA WE2
+
+       MOVB *R1+,@CMDREG      NOW FOR THE FORMAT PARMS
+       MOVB *R1+,*R2          GAP 0
+       MOVB *R1+,*R2          GAP 1
+       MOVB *R1+,*R2          GAP 2
+       MOVB *R1+,*R2          GAP 3
+       SWPB R9
+       MOVB R9,*R2            HEAD SELECT
+       SWPB R9
+       MOVB *R1+,*R2          SYNC SIZE
+       MOV  R4,R0             SECTOR COUNT
+       SWPB R0
+       INV  R0
+       MOVB R0,*R2            S/T INVERTED
+       MOVB *R1+,*R2          SECTOR SIZE
+       BL   @STMODE           MODE
+       MOVB *R1+,*R2          INT REG
+       MOVB *R1+,@CMDREG      FORMAT
+       BL   @WAIT
+       DATA WE2
+*
+       LI   R0,>5400          SAVE FORMAT INFO & RESTORE SECTOR DATA
+       LI   R1,SVFM
+MWM    MOV  *R1,R15           SAVE CURRENT
+       MOV  *R0,*R1+          SAVE FMT INFO
+       MOV  R15,*R0+          LOAD SECTOR DATA
+       CI   R0,>5500          SWAPPED ALL NEEDED
+       JNE  MWM               NO
+*
+* ADDED CODE TO DO MULTIPLE SECTOR WRITE
+*
+* SETUP 32 SECTOR MEMORY IMAGE
+*
+MW     LI   R1,MWRIT
+       MOVB *R1+,@CMDREG
+       MOVB *R1+,*R2          LOAD R0
+       MOVB *R1+,*R2           R1
+       MOVB *R1+,*R2           R2
+       MOVB *R1+,*R2           R3
+*  LOADED UP TO CYL/HEAD R4
+       MOV  R9,R0             GET HEAD
+       SLA  R0,4              PLACE LIKE THIS >00H0
+       MOVB R10,R0            HIGH BYTE OF CYLINDER NOW >CCH0
+       SLA  R0,4              NOW THIS >CH00
+       MOVB R0,*R2            LOAD INTO R4
+       SWPB R10               GET LOW CYLINDER COUNT
+       MOVB R10,*R2           LOAD R5
+       SWPB R10               RESTORE CYLINDER NUMBER
+       MOVB *R1+,*R2          R6 LOAD SEC/TRK
+       MOVB *R1+,*R2          R7 LOAD RETRY COUNT
+       MOVB *R1+,*R2          R8 LOAD MODE REG.
+       MOVB *R1+,*R2          R9 LOAD INT
+       BL   @SELDRV           SELECT DRIVE
+       BL   @WAIT
+       DATA MW
+       MOVB *R1+,@CMDREG      DO MULT. SECTOR WRITE
+MWM1   TB   0
+       JNE  MWM1
+       MOVB @STATRG,R0        GET STATUS
+* TEST THE RESULT FROM THE TRACK WRITE
+       ANDI R0,>1800          ANY ERROR
+       JNE  MWM4              YES MUST DO A SECTOR AT A TIME
+* CYLINDER DONE OK DO NEXT HEAD
+* NOW RESTORE FMT INFO
+MWM3   LI   R0,SVFM
+       LI   R1,>5400
+MWM2   MOV  *R0,R15           SAVE FMT DATA
+       MOV  *R1,*R0+          PUT IN FMT INFO
+       MOV  R15,*R1+          SAVE FMT DATA
+       CI   R1,>5500
+       JNE  MWM2
+*
+* NOW MUST DO MULTI-SECTOR READ TO VERIFY
+* IF THERE IS A FAILURE MUST READ EACH 1 TO FIND OUT WHICH 1 IS BAD
+*
+MR     LI   R1,MREAD
+       MOVB *R1+,@CMDREG
+       MOVB *R1+,*R2          LOAD R0
+       MOVB *R1+,*R2           R1
+       MOVB *R1+,*R2           R2
+       MOVB *R1+,*R2           R3
+*  LOADED UP TO CYL/HEAD R4
+       MOV  R9,R0             GET HEAD
+       SLA  R0,4              PLACE LIKE THIS >00H0
+       MOVB R10,R0            HIGH BYTE OF CYLINDER NOW >CCH0
+       SLA  R0,4              NOW THIS >CH00
+       MOVB R0,*R2            LOAD INTO R4
+       SWPB R10               GET LOW CYLINDER COUNT
+       MOVB R10,*R2           LOAD R5
+       SWPB R10               RESTORE CYLINDER NUMBER
+       MOVB *R1+,*R2          R6 LOAD SEC/TRK
+       MOVB *R1+,*R2          R7 LOAD RETRY COUNT
+       MOVB *R1+,*R2          R8 LOAD MODE REG.
+       MOVB *R1+,*R2          R9 LOAD INT
+       BL   @SELDRV           SELECT DRIVE
+       BL   @WAIT
+       DATA MR
+       MOVB *R1+,@CMDREG      DO MULT. SECTOR WRITE
+MRM1   TB   0
+       JNE  MRM1
+       MOVB @STATRG,R0        GET STATUS
+* TEST THE RESULT FROM THE TRACK READ
+       ANDI R0,>1800          ANY ERROR
+       JEQ  MRDUN             NO TRACK DONE
+* HAD A FAILURE SO READ EACH SECTOR TO FIND THE BAD ONES
+       CLR  R8                SECTOR #
+MRM2   LI   R1,READS          READ SECTOR SINGLE
+       MOVB *R1+,@CMDREG
+       MOVB *R1+,*R2          R0
+       MOVB *R1+,*R2          R1
+       MOVB *R1+,*R2          R2
+       SWPB R8                R3=SECTOR #
+       MOVB R8,*R2
+       SWPB R8
+*  LOADED UP TO CYL/HEAD R4
+       MOV  R9,R0             GET HEAD
+       SLA  R0,4              PLACE LIKE THIS >00H0
+       MOVB R10,R0            HIGH BYTE OF CYLINDER NOW >CCH0
+       SLA  R0,4              NOW THIS >CH00
+       MOVB R0,*R2            LOAD INTO R4
+       SWPB R10               GET LOW CYLINDER COUNT
+       MOVB R10,*R2           LOAD R5
+       SWPB R10               RESTORE CYLINDER NUMBER
+       MOVB *R1+,*R2          1 SECTOR
+       MOVB *R1+,*R2          MAX. RETRY
+       MOVB *R1+,*R2          STEP
+       BL   @SELDRV           SELECT DRIVE
+       BL   @WAIT
+       DATA MRM2
+       MOVB *R1,@CMDREG       READ COMMAND
+MRM3   TB   0                 WAIT FOR COMMAND TO COMPLETE
+       JNE  MRM3
+       MOVB @STATRG,R0        GET STATUS
+       ANDI R0,>1800          ANY ERROR
+       JEQ  NOMRM             NO ERROR
+* HERE IS WHERE THE BITMAP MUST BE MARKED
+       BLWP @SHWERR           INC ERROR COUNT AND MARK BITMAP
+NOMRM  INC  R8                NEXT SECTOR
+       C    R8,R4             ALL DONE
+       JL   MRM2              NO READ NEXT
+MRDUN  BLWP @SHWVER           SHOW TRACKS VERIFIED
+*
+       INC  R9                NEXT HEAD
+       C    R9,R5             ALL HEADS DONE
+       JEQ  MRDUN1            YES
+       B    @NXHDLN           DO NEXT HEAD
+MRDUN1 INC  R10               NEXT CYLINDER
+       C    R10,R6            ALL CYLINDERS DONE
+       JEQ  ALDONE            YES
+       C    @WPRM,R10         AT PRE-COMP CYLINDER
+       JNE  MW2               NO
+       AB   @WPC,@MWCMD       ADD IN PRE-COMP
+MW2    C    @REWC,R10         AT REDUCED WRITE CURRENT CYL.
+       JNE  MW2A              NO
+       AB   @WRC,@MWCMD       ADD IN REDUCED CURRENT BIT
+MW2A   BLWP @SHWTRK           SHOW TRACK TO FORMAT
+*
+* STEP TO NEXT CYLINDER
+*
+STEP00 MOVB @CBH05,@CMDREG
+       BL   @WAIT
+       DATA STEP00
+       B    @NXCYLN
+*
+*  NOW TO WRITE DATA TO THE SECTORS TO CREATE THE ECC BYTES
+*
+MWM4   CLR  R8                SECTOR TO WRITE TO
+       CLR  R14               don't bomb on no retries
+NS     LI   R1,FORMTD
+       MOVB *R1+,@CMDREG      POSITION POINTER
+       MOVB *R1+,*R2          BUFFER ADDRESS
+       MOVB *R1+,*R2          BUFFER ADDRESS
+       MOVB *R1+,*R2          BUFFER ADDRESS
+*
+       SWPB R8
+       MOVB R8,*R2            SECTOR NUMBER
+       SWPB R8
+*
+       MOV  R9,R0             NOW FOR CYL/HEAD
+       SLA  R0,4
+       MOVB R10,R0
+       SLA  R0,4
+       MOVB R0,*R2
+*
+       SWPB R10
+       MOVB R10,*R2           CYLINDER LSB
+       SWPB R10
+*
+       MOVB *R1+,*R2          ONE SECTOR
+       MOVB *R1+,*R2          >F0 NO RETRY
+       BL   @STMODE           MODE REG
+       MOVB *R1+,*R2          INT REG
+*    write sectors - put retry in here ....
+       BL   @SELDRV
+       BL   @WAIT
+       DATA NS
+       MOVB *R1+,@CMDREG
+       BL   @WAIT
+       DATA NS
+       INC  R8
+       C    R8,R4
+       JL   NS                NEXT SECTOR
+*
+       B    @MWM3              DO NEXT HEAD
+*
+ALDONE
+********************************************************************************
+* NOW WRITE TO SECTOR 0
+       LI   R0,>5400
+WSC0   CLR  *R0+
+       CI   R0,>5500
+       JNE  WSC0
+       LI   R0,>5400
+*
+       LI   R1,WDNAME
+       LI   R10,10
+WS0    MOVB *R1+,*R0+         GET NAME
+       DEC  R10
+       JNE  WS0
+       MOV  @TOTAU,*R0+       # OF AU'S
+       SWPB R4
+       MOVB R4,*R0+           SECTORS/TRACK
+       SWPB R4
+       LI   R10,RSSAV
+       MOVB *R10+,*R0+        RESERVED
+       MOVB *R10+,*R0+
+       MOVB *R10+,*R0+
+       MOV  @SPAU0,R10         CAL WIN TYPE  SEC/AU
+       SLA  R10,4
+       A    R5,R10            HEADS
+       DEC  R10               BASE 0
+       SLA  R10,8
+       MOVB @RATSAV,R7        get step rate
+       SRL  R7,8              buffered SEEK?
+       CI   R7,7
+       JNE  AUC003
+       ORI  R10,>0080
+AUC003 MOV  @WPRM,R9       GET PRECOMP
+       SRL  R9,4              SHIFT RIGHT 4
+       SOC  R9,R10
+       MOV  R10,*R0+
+* MUST NOW GET THE DATE AND TIME OF CREATION
+       MOV  R12,@CRUBAS
+       MOV  R0,@SEC0
+       BLWP @SETTD
+* DATE ALL DONE
+       INCT R0                SKIP TIME
+       INCT R0                SKIP DATE
+       CLR  *R0+              SUBS/FILES
+*  NOW GET POINTER TO FILE
+       LI   R10,>0040
+       MOV  @SPAU0,R9
+       MOV  R9,R9
+       JEQ  AUC005
+AUC004 SRL  R10,1
+       SRL  R9,1
+       JNE  AUC004
+AUC005 MOV  R10,*R0+          POINTER TO FILE POINTERS
+       CLR  *R0+              PARENT POINTER
+       CLR  @RETFLG           CLEAR RETRY FLAG
+WE3    LI   R9,WS0CM
+       MOVB *R9+,@CMDREG
+       LI   R10,8
+WS001  MOVB *R9+,*R2
+       DEC  R10
+       JNE  WS001
+       BL   @STMODE
+       BL   @SELDRV
+       BL   @WAIT
+       DATA WE3
+       MOVB *R9+,@CMDREG      NOW WRITE IT
+WS002  TB   0
+       JNE  WS002
+       MOV  @STATRG,R0
+       ANDI R0,>1800
+       JEQ  WS003             no error
+       INV  @RETFLG           DONE 2ND TRY
+       JNE  WE3               NO TRY AGAIN
+       SETO @DBAD             set bad disk flag
+* NOW MUST WRITE OUT BIT MAP SECTORS 1-31
+*
+* AND MAKE A SECOND COPY OF 0-31 IN 32-63
+* THEN ZERO OUT 64
+WS003  LI   R3,>1000          READ A SECTOR IN HFDC MEM
+       LI   R15,>0100         ALL BITMAP SECTORS
+       MOV  R15,R6            LOGICAL SECTOR
+       SWPB R4                MOVE S/T TO BYTE POSITION
+       SWPB R5                MOVE HEADS TO BYTE POSITION
+*
+MBM    LI   R0,>5500
+       LI   R7,256
+MBM1   SWPB R3
+       MOVB R3,@>8C02
+       SWPB R3
+       MOVB R3,@>8C02
+       CLR  R9
+       MOVB @>8800,R9
+       MOVB R9,*R0+
+       INC  R3
+       DEC  R7                DONE 256
+       JNE  MBM1
+*
+MTRYR1 LI   R14,1             SET THE MAX. RETRY COUNT
+WEBS   MOVB R6,@BSEC         SET LOGICAL SECTOR #
+WEB    LI   R9,WS1CM
+       MOVB *R9+,@CMDREG
+       LI   R10,8
+AUCB   MOVB *R9+,*R2
+       DEC  R10
+       JNE  AUCB
+       BL   @STMODE
+       BL   @SELDRV
+       BL   @WAIT
+       DATA WEB
+       MOVB *R9+,@CMDREG
+WEBT1  TB   0                 wait for complete
+       JNE  WEBT1
+       MOVB @STATRG,R0        GET STATUS
+       ANDI R0,>1800          ANY ERROR
+       JEQ  WEBT2             NO ERROR
+       DEC  R14               DONE ALL RETRIES
+       JNE  WEBS              NO TRY AGAIN
+       SETO @DBAD             set bad disk flag
+WEBT2  AI   R15,>0100
+       AI   R6,>0100
+       C    R6,R4            REACHED END OF TRACK
+       JLT  WEB1              NO
+       CLR  R6                LOGICAL SECTOR
+       MOVB @WCHD,R0          GET CYL/HEAD
+       AI   R0,>0100          NEXT HEAD
+       C    R0,R5             BEEN THROUGH ALL HEADS
+       JNE  WEB2              NO
+       CLR  R0                SET TO HEAD ZERO
+       MOVB @WCYL,R1          NEXT CYLINDER
+       AI   R1,>0100          DO NEXT CYL
+       MOVB R1,@WCYL
+WEB2   MOVB R0,@WCHD          SAVE NEW HEAD VALUE
+WEB1   CI   R15,>4100         ALL DONE
+       JEQ  WE5               YES GET OUT
+       CI   R15,>4000         TIME TO DO ROOT DIRECTORY
+       JNE  WEB4              NO
+       LI   R0,>5500          SET IT TO ZEROS
+WEB3   CLR  *R0+
+       CI   R0,>5600
+       JNE  WEB3
+       JMP  MTRYR1            GO WRITE IT
+WEB4   CI   R15,>2100         TIME TO DO SECOND BITMAP COPY
+       JNE  WEB4A             NO
+       LI   R0,>2100          RESET MEMORY POINTER
+       MOVB R0,@WS1MA
+       LI   R3,>1000          START IN VDP OF BITMAP
+       JMP  MBM
+WEB4A  CI   R15,>2000         ALL OF PRIMARY BITMAP DONE
+       JNE  MBM               NOT YET
+       LI   R0,>2000          SET TO WRITE A SECOND COPY OF SECTOR ZERO
+       MOVB R0,@WS1MA
+       JMP  MTRYR1            BEGIN SECOND COPY
+*
+********************************************************************************
+*
+WE5    MOVB @CBH01,@CMDREG    DESELECT ALL DRIVES
+       BL   @WAIT
+       DATA WE5
+* POWERUP RESET OF HFDC
+       SBO  0
+ERROR  MOV  @>4004,R9
+       MOV  @2(R9),R9         GET POWER ADDRESS
+       MOV  R12,@>83F8        PLACE HFDC CRU BASE INTO GPL WS R12
+       BL   *R9
+       NOP
+       SBZ  0
+P18    CLR  @0                CONV32  TURN OFF 32 BIT CONVERT
+       MOVB @MAPSAV,@>8002    RESTORE MAP POINTER
+*
+GOODRT MOV  @DBAD,R0          GET RTN STATUS non-zero is a bad disk
+       MOV  @RETSAV,R11
+       RT
+*
+WAIT   TB   0
+       JNE  WAIT
+       MOVB @STATRG,R0
+       ANDI R0,>1800
+       JNE  WAIT1             error
+WAIT0  LI   R13,5             five retries
+       B    @2(R11)
+WAIT1  DEC  R13
+       JEQ  WAIT2             no more retries - not good, folks
+       MOV  *R11,R11
+       B    *R11
+WAIT2  ABS  R14
+       JNE  ERROR             bomb out, folks
+       SETO @DBAD             SET BAD DISK FLAG
+       JMP  WAIT0
+
+SELDRV MOV  @DRSAV,R0         NOW SELECT DRIVE NUMBER
+       SWPB R0
+       ORI  R0,>2400
+       MOVB R0,@CMDREG        SELECT DRIVE, STEP RATE AND SECTOR TYPE
+       RT
+
+STMODE LI   R0,>E000          step rate
+       MOVB R0,*R2
+       RT
+* RESTORE DRIVE
+FORMTB BYTE >48               MODE REG.
+       BYTE >A5               SET TO >A5
+       BYTE >03               RESTORE COMMAND
+* FORMAT A TRACK
+FORMTC BYTE >40               REG. SELECT 0
+       BYTE >04               BUFF. LB
+       BYTE >20               BUFF. MB
+       BYTE >0                BUFF. HB
+       BYTE >40               CMD. REG. 0
+       BYTE >F0               GAP 0
+       BYTE >F0               GAP 1
+       BYTE >FD               GAP 2
+       BYTE >EA               GAP 3          NEW SIZE TO ALLOW FOR PHYSICAL R/W
+*      BYTE >EE               GAP 3
+       BYTE >F2               SYNC SIZE
+       BYTE >FD               SECTOR SIZE
+       BYTE >A5               INT. REG
+       BYTE >62               FORMAT COMMAND
+* MULTIPLE SECTOR WRITE
+MWRIT  BYTE >40               SET CMD REG. TO SETUP FOR INPUT
+       BYTE 0                 R0 LB BUFF.
+       BYTE >20               R1 MB START OF 8K
+       BYTE 0                 R2 HB
+       BYTE 0                 R3 STARTING SECTOR NUMBER
+*      BYTE 0                 R4 CYL/HEAD  CYL HI 4 BITS
+*      BYTE 0                 R5 CYLINDER LSB
+MSTRK  BYTE 32                R6 TOTAL SECTORS/TRACK MAX. 32
+       BYTE >F0               R7 MAXIMUM NUMBER OF RETRIES INVERTED IE=>F0=NONE
+MMODE  BYTE >E0               R8 >E0=BUFFER STEP >E7=NO BUFFER
+       BYTE >A5               R9 INT REG.
+MWCMD  BYTE >C0               WRITE COMMAND PHYSICAL
+* MWCMD  BYTE >E0               WRITE MULT. CMD >C8 AT PRE-COMP TRACK
+* MULTIPLE SECTOR READ
+MREAD  BYTE >40               SET CMD REG. TO SETUP FOR INPUT
+       BYTE 0                 R0 LB BUFF.
+       BYTE >20               R1 MB START OF 8K
+       BYTE 0                 R2 HB
+       BYTE 0                 R3 STARTING SECTOR NUMBER
+*      BYTE 0                 R4 CYL/HEAD  CYL HI 4 BITS
+*      BYTE 0                 R5 CYLINDER LSB
+MSTRK1 BYTE 32                R6 TOTAL SECTORS/TRACK MAX. 32
+MTRY   BYTE >F0               R7 MAXIMUM NUMBER OF RETRIES INVERTED IE=>F0=NONE
+MMODE1 BYTE >E0               R8 >E0=BUFFER STEP >E7=NO BUFFER
+       BYTE >A5               R9 INT REG.
+       BYTE >58               READ PHYSICAL COMMAND
+*      BYTE >5E               READ COMMAND MULT. LOGICAL
+* READ SINGLE
+READS  BYTE >40               SET CMD. REG
+       BYTE 0                 R0 LB BUFF.
+       BYTE >20               R1 MID
+       BYTE 0                 R2 HIBYT
+       BYTE 1                 R6 ONE SECTOR
+MTRYR  BYTE >F0               R7# OF RETRIES
+MMODE2 BYTE >E0               R8
+       BYTE >5E               WRITE LOGICAL COMMAND
+*
+* SINGLE SECTOR WRITE
+FORMTD BYTE >40
+       BYTE 0                 LB BUFF.
+       BYTE >21               MB BUFF.
+       BYTE 0                 HB BUFF.
+       BYTE 1                 SECTOR COUNT =1
+       BYTE >F0               NO RETRIES
+       BYTE >A5               INT.REG.
+       BYTE >E2               WRITE COMMAND
+* WRITE SECTOR ZERO
+WS0CM  BYTE >40
+       BYTE 0                 LB BUFF.
+       BYTE >20               MB BUFF.
+       BYTE 0                 HB BUFF.
+       BYTE 0                 SECTOR 0
+       BYTE 0                 CYL/HEAD 0
+       BYTE 0                 CYL. 0
+       BYTE 1                 SECTOR COUNT= 1
+       BYTE >F0               NO RETRIES
+       BYTE >A2               WRITE COMMAND
+* WRITE SECTOR 1
+WS1CM  BYTE >40
+       BYTE 0                 LB BUFF
+WS1MA  BYTE >21               MB BUFF
+       BYTE 0                 HB BUFF
+BSEC   BYTE 1                 SECTOR 1
+WCHD   BYTE 0                 CYL/HEAD 0
+WCYL   BYTE 0                 CYL. 0
+       BYTE 1                 SECTOR COUNT = 1
+       BYTE >F0               NO RETRIES
+       BYTE >A2               WRITE COMMAND
+FWVOL  BYTE 10
+WDNAME TEXT 'HDCCTEST  '
+RSSAV  TEXT 'W'               RESERVED SECTORS SHIFTED BY 6
+RATSAV TEXT 'I'               STEP RATE 0-7
+WCSAV  TEXT 'N'               REDUCED WRITE CURRENT SHIFTED BY 3
+SUTBLE DATA >F800,0,0,0,0
+       DATA >FF80,0,0,0,0
+       DATA >FFFF,>8000,0,0,0
+       DATA >FFFF,>FFFF,>8000,0,0
+SUTBL  DATA >FFFF,>FFFF,>FFFF,>FFFF,>8000
+* FMEXIT BYTE 4
+*      BYTE 'E'+>80
+*      TEXT 'xit'
+*      EVEN
+* FMEX0  DATA 'EE',GOODRT,0
+* ANYBAD DATA >FFFF
+RETSAV DATA 0
+BYPRSC DATA SECADD
+THREE  DATA 3
+TSLOC  EQU  >E642        40*18+22+>4000 REVERSED IS LOCATION FOR TRACK DISPLAY
+TSLOC1 EQU  >2C43        40*20+12+>4000 REVERSED IS LOCATION FOR VERIFY DISPLAY
+TSLOC2 EQU  >4143        40*20+33+>4000 REVERSED IS LOCATION FOR ERROR DISPLAY
+MAPSAV BYTE 0
+CBHBA  BYTE >BA
+H01
+CBH01  BYTE 1
+CBH00  BYTE 0
+CBH04  BYTE >04
+H05
+CBH05  BYTE >05
+CBH44  BYTE >44
+CBH0A  BYTE >0A
+WPC    BYTE >02               PRE-COMP BIT
+WRC    BYTE >08               REDUCED WRITE CURRENT BIT
+       EVEN
+TEN    DATA 10
+* INCREMENT BAD SECTOR COUNT AND DISPLAY
+SHWERR DATA FWS,SHWER         SHOW ERROR COUNT
+SHWER  INC  R12               ADD 1 TO ERROR COUNT
+*      SETO @ANYBAD           SET BAD SECTORS FOUND FLAG
+       MOV  R12,R3             NUMBER TO SHOW
+       BL   @CONVIT           GO CONVERT IT
+       LI   R0,TSLOC2
+       MOVB R0,@>8C02
+       SWPB R0
+       MOVB R0,@>8C02
+       LI   R2,6
+       LI   R1,TEMP
+SHWER1 MOVB *R1+,@>8C00
+       DEC  R2
+       JNE  SHWER1
+       MOV  @LSC,R1           FIGURE THE BAD SECTORS BITMAP POSITION
+       MOV  @HSC,R0
+       MOV  @16(R13),R3       GET SECTOR # FOR CYLINDER
+       MOV  R3,R3             SECTOR 0 OF CYL/TRACK
+       JEQ  SHWER4
+SHWER2 INC  R1
+       JNE  SHWER3            WRAP
+       INC  R0
+SHWER3 DEC  R3                GET TO POSITION
+       JNE  SHWER2
+SHWER4 DIV  @SPAU1,R0         GET AU# INTO R0
+       MOV  R0,R1             SAVE IT
+       SRL  R1,3              /8 TO GET BYTE OFFSET
+       ANDI R0,7              MASK BIT OFFSET
+       AI   R1,>1000          POINT TO CORRECT BYTE IN VDP
+       SWPB R1
+       MOVB R1,@>8C02         SET TO IT
+       SWPB R1
+       MOVB R1,@>8C02
+       CLR  R5
+       MOVB @>8800,R5         READ IN THE BYTE
+       LI   R2,>8000          FIGURE BAD BIT POSITION
+       MOV  R0,R0             ZERO OFFSET
+       JEQ  SHWER5            YES
+       SRL  R2,0              SHIFT AS NEEDED
+SHWER5 SOCB R2,R5             SET BAD BIT ON
+       AI   R1,>4000          NOW WRITE BYTE BACK TO VDP
+       SWPB R1
+       MOVB R1,@>8C02
+       SWPB R1
+       MOVB R1,@>8C02
+       NOP
+       MOVB R5,@>8C00         WRITE BYTE BACK
+       RTWP
+*
+* SHOW # OF SECTORS VERIFYIED
+SHWVER DATA FWS,SHWVR         SHOW # OF SECTORS VERIFIED
+SHWVR  MOV  @8(R13),R10       GET S/T
+SHWVR1 INC  @LSC              MUST INC THIS WAY FOR WRAP PURPOSES
+       JNE  SHWVR2            NO WRAP YET
+       INC  @HSC              INC HIGH COUNT
+SHWVR2 DEC  R10               ADD ALL S/T
+       JNE  SHWVR1
+       MOV  @LSC,R0           SETUP FOR CONVERT
+       MOV  @HSC,R2
+       LI   R1,TEMP           CLEAR TEMP AREA
+       LI   R3,3
+       LI   R7,'  '
+SHWVR3 MOV  R7,*R1+
+       DEC  R3
+       JNE  SHWVR3
+       LI   R1,TEMP
+P20    BLWP @0                BINDEC
+       LI   R0,TSLOC1
+       MOVB R0,@>8C02
+       SWPB R0
+       MOVB R0,@>8C02
+       LI   R2,6
+       LI   R1,TEMP
+SHWVR4 MOVB *R1+,@>8C00
+       DEC  R2
+       JNE  SHWVR4
+       RTWP
+*
+SHWTRK DATA FWS,SHWTK    SHOW THE TRAK # TO FORMAT
+SHWTK  MOV  @20(R13),R3  GET CALLERS R10 (TRACK #)
+       BL   @CONVIT
+* NOW DISPLAY THE CYLINDER #
+       LI   R0,TSLOC     VALUE OF SCREEN START DISPLAY
+       MOVB R0,@>8C02    SET LOW ADDRESS
+       SWPB R0
+       MOVB R0,@>8C02    NOW HIGH ADDRESS
+       LI   R2,6         FOUR DIGITS TO SHOW
+       LI   R1,TEMP      FROM TEMP
+SHWTK1 MOVB *R1+,@>8C00  SHOW A DIGIT OR A SPACE
+       DEC  R2           DONE 4
+       JNE  SHWTK1       NO
+       RTWP              YES
+*
+CONVIT LI   R0,TEMP
+       MOV  R0,R4
+       LI   R2,6
+       LI   R1,'  '
+CONVI1 MOVB R1,*R4+
+       DEC  R2
+       JNE  CONVI1
+       MOV  R3,R4
+       LI   R6,10000
+       CLR  R7
+CONVI2 CLR  R5
+       CLR  R3
+       DIV  R6,R3
+       MOV  R3,R3
+       JNE  CONVI3
+       MOV  R7,R7
+       JEQ  CONVI4
+CONVI3 AI   R3,>30
+       SWPB R3
+       MOVB R3,*R0+
+       SETO R7
+CONVI4 DIV  @TEN,R5
+       MOV  R5,R6
+       JNE  CONVI2
+       RT
+*
+SETTD  DATA FWS,SETTD1
+SETTD1 MOV  @CRUBAS,R12
+       MOVB @H05,@>4FE0       STOP THE CLOCK
+       LI   R0,CTABLE         ADDRESS TABLE OF CLOCK VALUES
+       LI   R1,TEMP           SAVE AREA
+       LI   R2,12             12 VALUES TO GET
+GETCLK MOV  *R0+,R3           GET A TABLE LOCATION
+       MOV  *R3,R3            NOW HAVE ITS VALUE
+       MOVB R3,*R1+
+       DEC  R2                GOT ALL 12
+       JNE  GETCLK
+       MOVB @H01,@>4FE0       RESTART THE CLOCK
+*NOW CONVERT THIS TO CORRECT FORMAT
+       LI   R1,TEMP
+       MOV  @SEC0,R0          POSITION FOR DATE/TIME
+       LI   R4,>000A          MULTIPLIER
+       BL   @INTCVT           CONVERT SECONDS
+       SRL  R3,1              MUST BE EVEN #    0000 0000 000S SSSS
+       MOV  R3,R6             SAVE THIS
+       BL   @INTCVT           CONVERT MINUTES
+       SLA  R3,5              CORRECT POSITION  0000 0MMM MMM0 0000
+       A    R3,R6
+       BL   @INTCVT           CONVERT HOURS
+       SLA  R3,11             CORRECT POSITION  HHHH H000 0000 0000
+       A    R3,R6             NOW HAVE ALL OF TIME
+       MOV  R6,*R0+
+* NOW DO DATE
+       BL   @INTCVT           CONVERT DAY
+       MOV  R3,R6             SAVE DAY          0000 0000 000D DDDD
+       BL   @INTCVT           CONVERT MONTH
+       SLA  R3,5              CORRECT POSITION  0000 000M MMM0 0000
+       A    R3,R6
+       BL   @INTCVT           CONVERT YEAR
+       SLA  R3,9              CORRECT POSITION  YYYY YYY0 0000 0000
+       A    R3,R6
+       MOV  R6,*R0+
+       RTWP
+       LIST
+*
+INTCVT MOVB *R1+,R2      GET A TENS DIGIT
+       SRL  R2,8         MOVE LOW
+       ANDI R2,>000F     LEAVE ONLY NIBBLE
+       MPY  R4,R2        TIMES 10
+       MOVB *R1+,R2      GET A UNITS DIGIT
+       SRL  R2,8         MOVE LOW
+       ANDI R2,>000F     LEAVE NIBBLE
+       A    R2,R3        ADD UNITS TO TENS
+       RT
+* LEFT JUSTIFY A # IN TEMP
+LEFT   MOV  R5,@LEFTL
+       MOV  R11,@LEFTBK+2     RETURN ADDRESS
+P4C    BL   @0                *VDPFIL
+LEFTL  DATA 14*SCRWID+28,6,>2000   REMOVE ANY VALUE THERE NOW
+*
+       LI   R1,TEMP+1
+LEFTJ  CB   *R1,@SPACE
+       JNE  LEFT1             GOT A NON-SPACE
+       INC  R1
+       JMP  LEFTJ
+LEFT1  CI   R1,TEMP+1         GOT ALL DIGITS?
+       JEQ  LEFT3             YES
+       LI   R2,TEMP+1         NOW MOVE IT UP
+LEFT2  MOVB *R1,*R2+
+       MOVB @SPACE,*R1+
+       CI   R1,TEMP+6         MOVED IT ALL
+       JNE  LEFT2             NO
+* NOW SEE HOW MANY DIGITS THERE ARE MAX. 5
+LEFT3  LI   R1,TEMP+5
+       LI   R2,5
+LEFT4  CB   *R1,@SPACE        GOT A DIGIT
+       JNE  LEFT5
+       DEC  R2
+       DEC  R1
+       CI   R1,TEMP+1         ALL TESTED
+       JNE  LEFT4             NO
+LEFT5  SWPB R2                COUNT
+       MOVB R2,@TEMP
+       LI   R1,TEMP
+LEFTBK B    @0
+*
+CTABLE DATA >4FE6,>4FE4,>4FEA,>4FE8,>4FEE,>4FEC   SS/MM/HH
+       DATA >4FF2,>4FF0,>4FF6,>4FF4,>4FFA,>4FF8   DD/MM/YY
+*
+SLAST  EQU  $            DONT SAVE THESE
+TEMP   BSS  20
+FWS    DATA 0,0,0,0           R0-R3
+       DATA 0                 R4
+       DATA 0                 R5
+       DATA 0                 R6
+       DATA 0                 R7
+       DATA 0                 R8 ERROR COUNT
+       DATA 0                 R9
+       DATA 0                 R10
+       DATA 0                 R11
+       DATA 0                 R12
+       DATA 0                 R13
+       DATA 0                 R14
+       DATA 0                 R15
+*
+TOTAU  DATA 0
+CRUBAS DATA 0
+SEC0   DATA 0
+TSH    DATA 0
+TSL    DATA 0
+LSC    DATA 0                 LOW SECTOR COUNT
+HSC    DATA 0                 HIGH SECTOR COUNT
+SPAU0  DATA 0
+SPAU1  DATA 0
+DBAD   DATA 0
+P15    DATA 0,0
+P16    DATA 0,0
+P7     DATA 0,0
+RETFLG DATA 0
+SVFM   BSS  256
+SECBUF BSS  256
+SSLAST END
+

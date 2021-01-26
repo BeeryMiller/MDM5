@@ -1,0 +1,223 @@
+*** MODULE NAME - RAMDISK ***
+***
+*
+*  BL   @RAMDSK - ALLOWS USER TO SEE THE PRESENT SETUP OF THE RAMDISK AND
+*  CHANGE IT IF THEY WISH.
+*
+*** NO PARAMETERS ***
+*
+***
+
+RAMDSK MOV  @RDPRES,R12
+       JNE  GOODRD
+       BLWP @HONK
+RAMDRT B    @UTIL3
+GOODRD BL   @CLTOP
+       BL   @GENCOM
+       DATA RAMCOM
+RDSLP  MOV  @TKALL,R0
+       LI   R1,TKALL$
+       BLWP @BINDEC
+       BL   @SCRGEN
+       DATA RAMTXT,RAMADR,8
+       MOV  @RDALL,R0
+       LI   R2,RDALL$+1
+       BL   @CNVNM
+       MOV  @PSALL,R0
+       LI   R2,PSALL$+1
+       BL   @CNVNM
+       BL   @SHOW$1
+       DATA RDALL$,>0186
+       BL   @SHOW$1
+       DATA RDALL$,>01F4
+       BL   @SHOW$1
+       DATA PSALL$,>0244
+
+*SHOW THE STATUS OF THE 128K-OS TOGGLE
+SHO128 MOV  @OS128K,R1
+       JEQ  $+12
+       BL   @SHOW$1
+       DATA ON128,>0290
+       JMP  EMUNRT
+       BL   @SHOW$1
+       DATA OFF128,>0290
+
+EMUNRT MOV  @EMUNUM,R0
+       LI   R2,EMUN$+1
+       BL   @CNVNM
+       BL   @SHOW$1
+       DATA EMUN$,>0316
+       BLWP @BEEP
+       BL   @COMNB
+       DATA RDSLST
+RDSMEN JMP  RDSLP
+RDSCH  LI   R0,9*40+30
+       LI   R1,RDALL$
+       BLWP @INPUT
+       DATA 4,>202E
+       JOC  RDSLP
+       JEQ  RDSLP
+SETRAM BLWP @ASCBIN
+       DATA RDALL$,RDSCH
+       CI   R0,400
+       JH   BADPAR
+       MOV  @TKALL,R2
+       C    R0,R2
+       JLE  GDPAR
+BADPAR BLWP @HONK
+       JMP  RDSCH
+GDPAR  C    R0,@RDALL
+       JEQ  RDSLP
+       MOV  R0,@RDALL
+       S    R0,R2
+       MOV  R2,@PSALL
+       BL   @RSETUP
+       JMP  RDSMEN
+
+SETDE  MOV  @EMUNUM,R0
+       CI   R0,5
+       JL   GRDEMU
+       SETO R0
+GRDEMU INC  R0
+       MOV  R0,@EMUNUM
+       BL   @SETEMU
+NOSEMU JMP  EMUNRT
+
+RSETUP MOV  R11,R13
+*SEE IF 128K-OS TOGGLE IS ON
+*IF IT IS THEN ADJUST TKALL DOWN 96K
+*      MOV  @OS128K,R0
+*      JEQ  NO128T
+*      BL   @RDGET       *GET TOTAL RAM AVAILABLE
+*      DATA >2002
+*      AI   R0,-96       *ADJUST FOR 128K-OS
+*      MOV  R0,@TKALL
+*
+NO128T SETO R0
+       BL   @RDPUT
+       DATA >20AC
+       BL   @RDPUT
+       DATA >20B2
+       CLR  R0
+       BL   @RDPUT
+       DATA >20AA
+       LI   R0,>A55A
+       BL   @RDPUT
+       DATA >2000
+       MOV  @RDALL,R0
+       BL   @RDPUT
+       DATA >2004
+       SLA  R0,2
+       MOV  R0,R4
+       BL   @RDPUT
+       DATA >20A2
+       BL   @RDPUT
+       DATA >20A6
+       BL   @RDPUT
+       DATA >20A8
+       MOV  @PSALL,R0
+       JNE  NALLPS
+       DEC  R4
+NALLPS BL   @RDPUT
+       DATA >2006
+       MOV  @TKALL,R0
+       SLA  R0,2
+       JEQ  $+4          *ADDED 7/86 TO TAKE CARE OF NO RAM AVAILABLE - 128KOS
+       DECT R0
+       BL   @RDPUT
+       DATA >20A4
+       MOV  @RDALL,R0
+       JEQ  RDSET
+       MOV  R4,@TOTRD
+       BL   @FILBUF
+       DATA >0000
+       BL   @VMBW
+       DATA VCBUF+>0100,GENBUF,>0100
+       LI   R3,GENBUF
+       LI   R2,RDVIB
+RVIBLP MOVB *R2+,*R3+
+       CI   R3,GENBUF+21
+       JL   RVIBLP
+       LI   R5,GENBUF+BITMAP
+RLP2   SETO *R5+
+       CI   R5,GENBUF+256
+       JL   RLP2
+       LI   R5,2
+RLP3   LI   R4,GENBUF+BITMAP
+       MOV  R5,R3
+       BL   @FRE
+       INC  R5
+       C    R5,@TOTRD
+       JL   RLP3
+       BL   @VMBW
+       DATA VCBUF,GENBUF,>0100
+       BL   @RDMBW
+       DATA VCBUF,>2100,>0200
+RDSET  B    *R13
+
+SETEMU MOV  R11,R13
+       BL   @RDGET
+       DATA >204A
+       SWPB R0
+       MOVB @EMUNUM+1,R0
+       SWPB R0
+       BL   @RDPUT
+       DATA >204A
+       B    *R13
+
+RDMBW  MOV  *R11+,R1
+       SWPB R1
+       MOVB R1,*R10
+       SWPB R1
+       MOVB R1,*R10
+       LI   R1,>834A
+       MOV  *R11+,R7
+       MOV  *R11+,R6
+       JMP  MBW2
+RDPUT  LI   R1,>8354
+       JMP  $+6
+RDGET  LI   R1,>835A
+       MOV  *R11+,R7
+MBW2   LI   R3,MBWRT
+       MOV  @RDPRES,R12
+       LI   R2,>834A
+RDACLP MOV  *R3+,*R2+
+       CI   R3,PGEND
+       JLE  RDACLP
+       SBO  0
+       CB   @>4001,@H03  *ADDED TO WORK WITH RAMDISKS USING NEW 256 X 1 DRAMS
+       JL   $+4
+       C    *R12+,*R12+
+       B    *R1
+
+MBWRT  SBO  1
+MBWLP  MOVB *R9,*R7+
+       DEC  R6
+       JNE  MBWLP
+       JMP  PGRT
+PUTRT  SBO  1
+       MOV  R0,*R7
+       JMP  PGRT
+       SBO  1
+       MOV  *R7,R0
+PGRT   SBZ  1
+       ANDI R12,>FF00
+       SBZ  0
+PGEND  B    *R11
+
+*ROUTINE TO TOGGLE 128K-OS ON AND OFF
+*FIRST FIND OUT THE CURRENT STATUS
+TOG128 LI   R2,96        *THIS WILL BE NEEDED LATER
+       MOV  @OS128K,R1
+       JEQ  TOGSOF
+*IT MUST HAVE BEEN ON SO ADD BACK THE
+*96K TO TKALL SO THE MANAGER WILL SHOW
+*IT AS BEING BACK AGAIN
+       A    R2,@TKALL
+       JMP  $+6
+*IT MUST HAVE BEEN OFF SO SUBTRACT THE
+*96K FOR THE 128K-OS FROM TKALL
+TOGSOF S    R2,@TKALL
+       INV  @OS128K
+       B    @RDSLP
+

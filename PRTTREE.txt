@@ -1,0 +1,88 @@
+*** MODULE NAME: PRTTREE ***
+*
+* Print directory tree
+* CALLED BY GETDRV WHEN @ TOP LEVEL AND CTL/P OR ALT/P ARE PRESSED
+* OK JACK NOW HOPEFULLY YOU'LL FINALLY HAVE THIS FEATURE
+*
+PTREE  MOV  @LEVEL,R0         AT TOP LEVEL
+       JEQ  $+6               YES OK TO DO
+       B    @GD29+4           NO IGNORE
+       LI   R15,PRTABO        prtscr abort
+       BL   @OPEN             open printer device
+       DATA PRTPAB
+* AT THIS TIME VOLUME CONTAINS THE INFO ON THE WDS SO STARTUP WITH IT
+       CLR  @TOTERR           PRINT LINES COUNTER
+       BL   @VDPFIL
+       DATA PRTBUF,80,>2020   CLEAR PRINT BUFFER
+       BL   @VMBW
+       DATA PRTBUF+6,HEADRT+17,4    Vol:
+       BL   @VMBW
+       DATA PRTBUF+6+5,VOLUME,10    volume name
+       BL   @VMBW
+       DATA PRTBUF+6+45,HEADR2+3,5  Files
+       BL   @VMBW
+       DATA PRTBUF+6+54,PCL1+43,7   CREATED
+       BL   @PRNTVT
+       BL   @VDPFIL
+       DATA PRTBUF+6,72,'--'
+       BL   @PRNTVT           DASH  LINE
+*
+       LI   R1,PATHS      SET TO DO PATHS PAST ROOT
+       MOVB @H00,*R1+
+       MOV  R1,@GENBUF+4
+       CLR  R7           POINTER INTO SRBUF
+       CLR  @GENBUF      ROOT DIRECTORY
+       CLR  @GENBUF+2    FIRST SUB-DIR
+       JMP  SHOPT        GO PRINT ROOT DIR INFO
+*
+PSR02  MOV  @GENBUF(R7),R0     GET SECTOR #
+       LI   R1,TEMP
+       BLWP @RSHRD       GET A DIR
+       DATA PSR02
+       MOV  @GENBUF+2(R7),R2
+       INCT @GENBUF+2(R7)
+       MOV  @TEMP+28(R2),R0  SET SECTOR # OF THIS SUB
+       JEQ  PSR07              NO MORE SUBS IN THIS PATH
+       BL   @DUPCOD           GO DO THE PART THAT IS THE SAME AS FIND
+SHOPT  BL   @SHOHED
+       DATA PRTBUF+6-1,VOLUME
+       BL   @VDPFIL
+       DATA PRTBUF+6+40,5,>2020   Remove the word files
+       BL   @VDPFIL
+       DATA PRTBUF+6+50,30,>2020  AND OTHER EXTRA INFO
+       LI   R7,VOLUME+18        START OF DATE/TIME
+       LI   R0,PRTBUF+6+52+>4000  SET VDP START LOCATION
+       SWPB R0
+       MOVB R0,*R10
+       SWPB R0
+       MOVB R0,*R10
+       BL   @PCAT1
+       MOV  @S1BUFF+254,R7      NOW RESTORE R7
+       BL   @PRNTVT
+       JMP  PSR02        DO NExt
+*
+PSR07  AI   R7,-6        PREVIOUS ENTRY
+       JGT  PSR02
+       JEQ  PSR02
+* all done close printer
+       BL   @PRNTVT      A BLANK LINE AT END
+PRTABO BL   @CLOSE
+       DATA PRTPAB
+       B    @GDTOP1           return to top of dir
+*
+PRNTVT MOV  R11,@PRNTRT+2     retn address
+       LI   R0,>200C          space or ff
+       LI   R1,PRTBUF+78
+       INC  @TOTERR
+       MOV  @TOTERR,R2        page done
+       CI   R2,58
+       JNE  $+8
+       CLR  @TOTERR
+       SWPB R0
+       BL   @VSBW
+       BL   @PRINTV
+       DATA PRTBUF,79
+       BL   @VDPFIL
+       DATA PRTBUF,80,>2020   clear print line
+PRNTRT B    @0
+*

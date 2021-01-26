@@ -1,0 +1,343 @@
+***
+*
+*   BL   @FORMAT - ASKS FOR INFORMATION ABOUT DISK AND FORMATS IT ACCORDING
+*   TO THE SPECIFICATIONS PROVIDED.
+*   USES MIDREG AS WORKSPACE
+*
+*   R3 HOLDS DRIVE NUMBER
+*
+***
+*
+FORMAT MOV  R11,@FORSAV
+       BL   @CKRDEN
+       STWP R11
+       MOV  R11,@DSDRT+2
+       MOV  R3,@DRVNUM
+       DEC  R3
+       SLA  R3,1
+       MOVB @D1SIDE(R3),@FSIDE2
+       MOVB @D1DENS(R3),@FDENSE
+       LWPI MIDREG
+       BL   @VDPFIL
+       DATA >00F0,15*40,>2000
+       BL   @CLRCOM
+* If HFDC is at CRU base >1100 and drive # <5 or drive # <6 if Emulation is
+* active then ask for interlace else if drive #>4 and less than 9 and CRU base
+* other than >1100 ask for interlace
+       MOV  @DRVNUM,R4        Get the drive #
+       SETO @NQFLAG           Set a flag to indicate interlace on
+       LI   R3,5              Set to ask 5 questions
+       CI   R4,8              If Drive #>8 then no interlace
+       JGT  NOINT
+       LI   R1,4              Max drive # for HFDC at CRU >1100
+       C    @DCPRES,@WDPRES   HFDC AT CRU BASE >1100
+       JNE  $+16              No must test drive range of 5-8
+       MOV  @EMUFDR,R0        Now test if drive 1 emulation is on
+       JEQ  $+4               No
+       INC  R1                Make max drive for HFDC = 5
+       C    R4,R1             If = or < than 4/5 ask interlace
+       JLE  NOINT+8           Ask it
+       JMP  NOINT             Don't ask
+* Since HFDC is not at CRU >1100 the valid drives for it are 5-8
+       C    R4,R1             is DR# >4
+       JGT  NOINT+8           Yes as for it
+NOINT  LI   R3,4              don't display interlace question
+       CLR  @NQFLAG           Clear interlace on flag
+       MOV  R3,@FLINES
+       BL   @SCRGEN
+       DATA FTXT,FADDR
+FLINES DATA 5
+GFNAME LI   R0,7*40+27
+       LI   R1,NEWNAM
+       BLWP @INPUT       *GET NEW DISK NAME
+       DATA 10,>202E
+       JNC  GFTRAK
+       CI   R0,>8F00          fctn 9?
+       JNE  GFTRAK
+       B    @LEV1RT           exit
+*
+GFTRAK CB   @NUMTRK+1,@H38 *SEE IF LAST FORMAT WAS 80 TK DRIVE
+       JNE  $+16              nope
+       LI   R0,DFLT40         40 track defaults
+       LI   R1,NUMTRK
+       MOVB *R0+,*R1+
+       MOVB *R0+,*R1+
+       MOVB *R0+,*R1+
+       BLWP @DRIV80
+       JNE  USE40
+*IF IT'S AN 80 TK DRIVE THEN DEFAULT TO 80 TK FORMAT
+       LI   R0,DFLT80
+       LI   R1,NUMTRK
+       MOVB *R0+,*R1+
+       MOVB *R0+,*R1+
+       MOVB *R0+,*R1+
+USE40  BL   @SHOW$1
+       DATA NUMTRK,9*SCRWID+27
+       LI   R1,9*SCRWID+27
+       BL   @COMB
+       DATA TRLLST
+TRKS   MOVB R0,@NUMTRK+1      SAVE NUMBER
+GFTRCK BLWP @ASCBIN
+       DATA NUMTRK,GFTRAK
+       MOV  R0,@TRAKS2        save number of tracks
+       CI   R0,40
+       JEQ  GFSIDE       *IT CAN BE < OR = TO 40
+*
+*CHANGED 5/86 TO ALLOW 80 TRACK FORMATS - NOTHING BETWEEN 40 AND 80 ALLOWED
+       CI   R0,80             80 tracks?
+       JNE  BDTKNM            no - bad track number
+*USER SPECIFIED 80 TK FORMAT - SEE IF IT'S AN 80 TK DRIVE
+       BLWP @DRIV80           80 track drive?
+       JEQ  GFSIDE            yes
+*   bad track number entered
+BDTKNM BLWP @HONK
+       JMP  GFTRAK       *TRY AGAIN
+*
+GFSIDE LI   R3,SDADR
+       LI   R4,SAVSD
+GFSLP  MOV  *R3+,R1      *VDP ADRESSES
+       BL   @COMB
+       DATA SDLST
+GFUP   CI   R3,SDADR+2
+       JEQ  GFTRAK
+       JMP  GFSIDE
+*
+GFDEF  MOV  R12,R0
+GFDENS MOVB R0,*R4+
+       CI   R3,SDADR+2
+       JLE  GFSLP
+       CLR  R15
+       CB   @SAVSD+1,@H53
+       JNE  DDSEL
+       BL   @SDENS
+       JMP  SDCON
+*MUST BE DOUBLE DENSITY SO FIND OUT HOW MANY SECTORS PER TRACK
+*(if myarc - otherwise, use 18 sec/trk only)
+* if myarc hfdc only dc and dr <5 then ask for sec/trk
+*     else if hfdc and another DC and dr>4 then as sec/trk
+*     else if myarc fdc and dr <5 and no 80 trk eprom then 16 sec/trk
+*     else if myarc fdc & 80 trk eprom then 18 sec/trk
+*
+* IF HFDC AND NO OTHER THEN TEST IF DR >4
+DDSEL  C    @DCPRES,@WDPRES   ONLY A HFDC PRESENT
+       JEQ  DDSEL2
+       MOVB @DCID,R7          any dcid?
+       JNE  DDSEL1            yes
+DDSL18 BL   @SEL18            use 18 sec/trk
+       JMP  SDCON
+* got both a myarc DC and a HFDC so must see if dr >4 if so then ask sec/trk
+DDSEL1 C    @DRVNUM,@H0004    if 5-8 then ask may be on hfdc
+       JGT  DDSELA
+* its a drive that is not on the hfdc so must now see if we can do 18 sec/trk
+       CB   @DCID,@H03        if < ver. 3 then only 16 sec/trk
+       JL   DDSL16            its 16 sec/trk
+       JMP  DDSELA            use 16 OR 18 sec/trk
+DDSL16 BL   @SEL16
+       JMP  SDCON
+DDSEL2 LI   R1,4              Max HFDC drive if no DR1 emulation
+       MOV  @EMUFDR,R0        Test if dr1 EMU on
+       JEQ  $+4               No
+       INC  R1                Make max 5
+       C    @DRVNUM,R1        test if DR#> 4/5
+       JGT  DDSL18            its >4 so don't as sec/trk
+DDSELA BL   @SCRGEN
+       DATA SPTMES,SPTADR,2
+       BL   @COMNB
+       DATA SPTLST
+SDCON  BL   @VDPFIL
+       DATA >0258,80,>2000
+       BL   @SHOW$1
+       DATA SECTXT,>0260
+*NOW INPUT INTERLACE VALUE
+*IT MAY RANGE FROM 1 - # OF SECTORS/TRK
+       CLR  @TEMP             default interlace = 0
+       ABS  @NQFLAG           Formatting a drive on HFDC
+       JEQ  ILNTMY            not myarc hfdc
+       MOV  @DEFIL(R15),R0
+       LI   R2,ILASC+1
+       BL   @CNVNM
+ILERR  LI   R0,>02C3
+       BLWP @INPUT
+       DATA 2,>202E
+       JNC  NOIRT
+       LI   R2,CTRLST
+       CB   R0,*R2+           up arrow?
+       JEQ  GFSIDE
+       CB   R0,*R2            fctn 9?
+       JNE  NOIRT             no
+FORAB  B    @LEV1RT
+NOIRT  BLWP @ASCBIN
+       DATA ILASC,ILERR2
+       MOV  R0,@TEMP
+       JNE  ILNOT0
+ILERR2 BLWP @HONK
+       JMP  ILERR
+ILNOT0 MOVB @SECPTK,R3
+       SRL  R3,8
+       C    R0,R3
+       JH   ILERR2
+       MOV  R0,@DEFIL(R15)
+ILNTMY BL   @CONABO
+       MOV  @TEMP,R5          get interlace
+       BL   @FORDSK           format all tracks
+       CB   @SECPTK,@CNABT    DID USER REQUEST 16/TK
+       JNE  $+8               YES doing 16/tk so make the computed total secs
+       MOV  @NOTDSD,@TOTAU2   not reported total sectors
+       MOVB @TRAKS2+1,@TRAK   tracks
+       LI   R2,GENBUF
+       MOV  R2,R1
+VIBLP2 CLR  *R2+
+       CI   R2,GENBUF+256
+       JL   VIBLP2
+       LI   R0,1
+       LI   R15,BADDSK
+       BLWP @WSCPU
+       DATA BADDSK
+       MOVB @H01,@SIDE2
+       CB   @SAVSD,@H44       d?
+       JNE  $+8
+       AB   @H01,@SIDE2       make it a 2
+       LI   R2,NEWNAM+1
+VIBXFR MOVB *R2+,*R1+
+       CI   R2,VIBDNS
+       JLE  VIBXFR
+       CLR  R0
+       LI   R1,GENBUF
+       BLWP @WSCPU
+       DATA BADDSK
+       LI   R1,CPYVOL   *PUT VOLUME IN CPYVOL AND SET CONTROLLER FOR CORRECT
+       BLWP @RSCPU      *OF SECTORS/TK
+       DATA BADDSK
+       LI   R1,CPYVOL+BITMAP
+SETVIB SETO *R1+
+       CI   R1,CPYVOL+256
+       JL   SETVIB
+       LI   R0,FWVNUM
+       LI   R1,'  '
+       LI   R2,6
+FIX97  MOVB R1,*R0+           CLEAR A BYTE
+       DEC  R2
+       JNE  FIX97
+       BL   @SHOW$1
+       DATA FWTT5,19*SCRWID+16     SECTOR # BEING VERIFIED
+       LI   R0,2
+VFYERR LI   R1,GENBUF
+       BLWP @BINDEC
+       BL   @VMBW
+       DATA 19*SCRWID+27,GENBUF,5
+*      BLWP @CKF4
+*      DATA RITBIT
+       LI   R1,>0600
+       BLWP @RSVDP
+       DATA BADSEC
+*
+SECCK  MOV  R0,R5
+       MOV  R0,R3
+       BL   @FRECSC
+       MOV  R5,R0
+       JMP  BADSC1
+* 80 TRACK FLOPPIES NOT GETTING BAD SECTORS MARKED IF THEY ARE ODD NUMBERS
+* THIS WILL MARK THEM AS BAD SO THAT IF THE EVEN ONE WAS GOOD THEY BOTH WILL
+* BE MARKED USED
+BADSEC MOV  R0,R5
+       MOV  R0,R3
+       LI   R4,CPYVOL+BITMAP
+       C    @TOTSEC-BITMAP(R4),@H0640        80 TRACK DISK
+       JLE  BADSC1                           NO DON'T WORRY ABOUT ODD SECTOR
+       SRL  R3,1                             SHIFT (2 SECTORS/AU)
+       C    @TOTSEC-BITMAP(R4),@H0C80        36 SEC/TRK
+       JLE  $+4                              NO
+       SRL  R3,1                             SHIFT AGAIN (4 SECTORS/AU)
+       MOV  R3,R0
+       SRL  R3,3
+       A    R4,R3
+       LI   R4,>0100
+       ANDI R0,>0007
+       JEQ  $+4
+       SLA  R4,0
+       SOCB R4,*R3                           SET SECTOR USED
+       MOV  R5,R0                            RESTORE R0
+BADSC1 INC  R0
+       C    R0,@TOTAU2
+       JL   VFYERR
+RITBIT CLR  R0
+       LI   R1,CPYVOL
+       BLWP @WSCPU
+       DATA BADDSK
+       JMP  FORMRT
+*
+BADDSK BL   @COM13
+       BL   @CONABO
+FORMRT C    @NOTDSD,@TOTAU2   COMPARE THE TOTAL CALC WITH THE # REPORTED
+       JEQ  DSDRT             THEY ARE EQUAL
+       MOV  @NOTDSD,R0        reported sectors not equal to calc
+       LI   R1,FSIZE1
+       BLWP @BINDEC
+       MOV  @TOTAU2,R0
+       LI   R1,FSIZE2
+       BLWP @BINDEC
+*
+       BL   @CLTOP
+       BL   @SCRGEN
+       DATA DSDMSG,DSDADR,3
+       BL   @CONABO
+DSDRT  LWPI MIDREG      *WS IS REPLACED BY CALLING WS
+       MOV  @FORSAV,R11
+       B    *R11
+*  changed 3/21 to use >0111 subroutine, instead of direct access
+* in:
+*  R5       = interlace
+*  SAVSD    = 'S' or 'D' for sides
+*  SAVSD+1  = 'S' or 'D' or 'Q' for density
+*  TRAKS2+1 = tracks
+*  DRVNUM+1 = drive number
+FORDSK MOVB @TRAKS2+1,@>834D  set up tracks
+* now calc what the total # of sectors should be
+       MOVB @>834D,R0
+       SRL  R0,8              tracks
+       CB   @SAVSD,@H53       single sided
+       JEQ  $+4               yes
+       SLA  R0,1              tracks*sides
+       MOVB @SECPTK,R2
+       SRL  R2,8
+       MPY  R2,R0             *sectors per track
+       MOV  R1,@NOTDSD        save it
+       MOV  @VCOPBF,@>834E    vdp buffer address
+       LI   R0,>0101          density and sides = single
+       CB   @SAVSD,@H53       's'?
+       JEQ  $+4               yes
+       INC  R0                double sided
+       CB   @SAVSD+1,@H53     's'?
+       JEQ  FORDS1            yes
+       AI   R0,>0100          double density
+       CB   @SAVSD+1,@H44     'd'?
+       JEQ  FORDS1
+       AI   R0,>0100          quad density
+*  now insert interlace
+FORDS1 SLA  R5,10             shift into upper six bits of density
+       SOCB R5,R0             put it in
+       MOV  R0,@>8350         set
+       BLWP @DSRSUB           format
+       DATA >11
+       MOV  @>834A,@TOTAU2    GET THE # OF AUS REPORTED BACK
+       MOVB @>834D,@TEMP      GET THE REPORTED SECTORS PER TRACK
+       RT
+SEL16  INCT R15
+SEL18  INCT R15
+SDENS  MOV  @DENTBL(R15),R0
+       MOVB *R0+,@VIBDNS      density (>01 or >02)
+       MOVB *R0+,@SECPTK      sectors per track
+       MOVB *R0+,@SPTMSG      ascii of sec/trk
+       MOVB *R0+,@SPTMSG+1    ascii of sec/trk
+       RT                     return
+CKRDEN MOV  @RDPRES,R2   *FIRST SEE IF THERE IS A RAMDISK
+       JEQ  NOTERD
+       C    R3,@EMUNUM
+       JNE  NOTERD
+       BL   @CLTOP
+       BL   @SCRGEN
+       DATA RDETXT,RDEADR,2
+       BLWP @HONK
+       BL   @CONABO
+       B    @LEV1RT
+NOTERD B    *R11

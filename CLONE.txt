@@ -1,0 +1,370 @@
+FOROPR DATA 0                 FLAG FOR FORMAT OPERATION SO THE GETDRV
+*                             DOES NOT ATTEMPT TO READ THE DISK
+UTIL   BL   @CLTOP
+       BL   @SCRGEN
+       DATA TTXT1,TADDR1,6
+UTIL2  BL   @COM9
+       BLWP @BEEP
+UTIL3  BL   @COMNB
+       DATA CLIST4
+       JMP  UTIL
+*
+***
+*   BL   @CLONE - SECTOR COPY ROUTINE
+*
+***
+*
+       LIST
+CLONE  CLR  @CLONFL
+       BL   @CLTOP
+       BL   @SCRGEN
+       DATA SECWRN,SCWADR,3
+       BL   @CONABO
+       LI   R0,1
+       MOV  R0,@DIRAUD
+CLONE1 LI   R0,1
+       MOV  R0,@DIRAUS
+       CLR  @HRDS
+       CLR  @HRDD
+       CLR  @PATHS
+       CLR  @PATHD
+       BL   @CLTOP
+       BL   @SETMN
+       BL   @INITMN
+GDFORM BL   @SETCPY
+       MOVB @COPYDR,@DNUM2
+       BL   @INITDR
+       DATA CPMES
+CLONE2 MOV  @COPYD,@DRVNUM
+       C    @DRVNUM,@EMUNUM
+       JNE  CLONE3
+       C    @VOLUME+TOTSEC,@TOTRD
+       JH   $+6
+       B    @NOFORM
+       BL   @CLRCOM
+       BL   @OTHERR
+       DATA NOCLRD
+       BL   @CONABO
+ABCLJ  B    @UTIL
+CLONE3 BL   @SHOW$1
+       DATA REFWRN,19*SCRWID+01
+       MOVB @VOLUME+SIDES,R1
+       ANDI R1,>0200
+       SRL  R1,9
+       MOVB @SDFLG(R1),@SAVSD
+       MOVB @VOLUME+TRKSID,R1
+       SRL  R1,8
+       JEQ  PPCRAP
+       CI   R1,>0028
+       JLE  TKOK
+       CI   R1,>0050
+       JEQ  TKOK
+PPCRAP LI   R1,>0028
+TKOK   MOV  R1,@TRAKS2
+       CLR  R15
+       MOVB @VOLUME+DENSE,R1
+       ANDI R1,>0200
+       SRL  R1,9
+       JEQ  SINDEN
+       CB   @VOLUME+SECTRK,@H10
+       JEQ  SPT16
+       BL   @SEL18
+       JMP  MOVDNS
+SPT16  BL   @SEL16
+       JMP  MOVDNS
+SINDEN BL   @SDENS
+MOVDNS MOVB @SDFLG(R1),@SAVSD+1
+       MOV  @DEFIL(R15),R5
+       MOVB @SECPTK,R3
+       SRL  R3,8
+CLONE4 BL   @FORDSK
+NOFORM BL   @SHOHED
+       DATA >0000,VOLUME
+       BL   @CLMID
+       BL   @SCRGEN
+       DATA CLTXT,CLADR,4
+       CLR  R0
+REDOSS LI   R2,STSCNM+1
+       BL   @CNVNM
+BADNM1 LI   R0,>41BC+18
+       BLWP @INPUT
+       DATA 5,>202E
+       JOC  ABCLJ
+       BLWP @ASCBIN
+       DATA STSCNM,BADNM1
+       MOV  R0,R6
+       MOV  @VOLUME+TOTSEC,R0
+       DEC  R0   *MAKE IT BASE 0
+       LI   R2,NDSCNM+1
+       BL   @CNVNM
+BADNM2 LI   R0,>4213+11
+       BLWP @INPUT
+       DATA 5,>202E
+       JNC  NABCL1
+       CI   R0,>8B00
+       JNE  ABCL
+       MOV  R6,R0
+       JMP  REDOSS
+NABCL1 BLWP @ASCBIN
+       DATA NDSCNM,BADNM2
+       MOV  R0,R7        *END SECTOR R7
+       MOV  R6,R0        *START SEC R6
+       JNE  NOCLVO
+       C    @EMUNUM,@COPYD
+       JNE  NOCLVO
+       INC  R6
+       CLR  R0
+       LI   R1,VOLUME
+       BLWP @WSCPU
+       DATA ABCL
+       MOV  R6,R0
+NOCLVO MOV  R6,R15
+CLREAD C    @MAIND,@COPYD
+       JNE  NOTSD1
+       MOV  R6,@OVRALL        SAVE R6
+       MOV  R7,@DSKFUL        SAVE R7
+       MOVB @MAINDR,@DNUM2
+       BL   @INITDR
+       DATA MNMES
+       MOV  @OVRALL,R6        RESTORE R6
+       MOV  @DSKFUL,R7        RESTORE R7
+NOTSD1 MOV  @MAIND,@DRVNUM
+       MOV  @CPYBAS,@READIN
+       MOV  @VCOPBF,@VREADN
+CLLP2  MOV  R6,R0
+       LI   R2,GENBUF+1
+       BL   @CNVNM
+       BL   @SHOW$1
+       DATA GENBUF,20*SCRWID+09
+       BL   @FILLUP
+       DATA CLRITE
+       INC  R6
+       C    R6,R7
+       JLE  CLLP2
+CLRITE C    @MAIND,@COPYD
+       JNE  NOTSD2
+       MOV  R6,@OVRALL        SAVE R6
+       MOV  R7,@DSKFUL        SAVE R7
+       MOVB @COPYDR,@DNUM2
+       BL   @INITDR
+       DATA CPMES
+       MOV  @OVRALL,R6        RESTORE R6
+       MOV  @DSKFUL,R7        RESTORE R7
+NOTSD2 MOV  @COPYD,@DRVNUM
+       MOV  @CPYBAS,@RITEO
+       MOV  @VCOPBF,@VRITEO
+CLLP3  MOV  R15,R0
+       LI   R2,GENBUF+1
+       BL   @CNVNM
+       BL   @SHOW$1
+       DATA GENBUF,20*SCRWID+28
+       BL   @EMPTY
+       DATA CLREAD
+       INC  R15
+       C    R15,R7
+       JLE  CLLP3
+ABCL   B    @UTIL
+       UNL
+*
+***
+*   BL   @CNVNM - CONVERT BINARY # IN R0 TO LEFT JUSTIFIED ASCII AND
+* PUTS IT IN BUFFER POINTED TO BY R2 WITH LENGTH AT R2-1. R1 IS LEFT POINTING
+* TO THE LENGTH BYTE FOR INPUT ROUTINE.
+* R0 - BINARY NUMBER
+* R2 - BUFFER (NOT LENGTH BYTE)
+***
+*
+CNVNMH LI   R4,BINHEX
+       LI   R5,LEN$+4
+       JMP  CNV
+CNVNM  LI   R4,BINDEC
+       LI   R5,LEN$+5
+CNV    LI   R1,LEN$
+       MOV  R1,R3
+       BLWP *R4
+       CLR  R4
+CLNLP1 CB   *R3+,@H20
+       JEQ  CLNLP1
+       MOV  R2,R1
+       DEC  R1
+       DEC  R3
+CLNLP2 MOVB *R3+,*R2+
+       INC  R4
+       C    R3,R5
+       JL   CLNLP2
+       SWPB R4
+       MOVB R4,*R1
+       B    *R11
+*
+INSET  MOV  R11,@SAVRT2
+       JMP  IMAIN
+REDOMN MOV  R11,@SAVRT2
+       JMP  DOMN
+INITMN MOV  R11,@SAVRT2
+       MOVB @MAINDR,@DNUM2
+       BL   @INITDR
+       DATA MNMES
+DOMN   MOV  @MAIND,@DRVNUM
+IMAIN  BL   @V1LOAD
+       BL   @SHOHED
+       DATA >0000,VOLUME
+       MOV  @SAVRT2,R11
+       B    *R11
+*
+REDOCP MOV  R11,@SAVRT2
+       JMP  DOCP
+       MOV  R11,@SAVRT2
+       MOVB @COPYDR,@DNUM2
+       BL   @INITDR
+       DATA CPMES
+DOCP   MOV  @COPYD,@DRVNUM
+       BL   @C1LOAD
+       BL   @SHOHED
+       DATA 160,CPYVOL
+       MOV  @SAVRT2,R11
+       B    *R11
+*
+INITDR MOV  *R11+,R3
+       MOV  R11,R14
+       BL   @CLRCOM
+       LI   R1,DRVNM2
+INITLP MOVB *R3+,*R1+
+       CI   R1,DRVNM2+4
+       JL   INITLP
+       BL   @SHOW$1
+       DATA CPMES2,19*SCRWID+01
+       BL   @CONABO
+       B    *R14
+*
+NSETMN SETO R3
+       JMP  SET
+SETMN  CLR  R3
+SET    MOV  R11,R13
+       MOVB @MAINDR,@MNDRAS
+       BL   @SHOW$1
+       DATA MNDR$,07*SCRWID+07
+       LI   R1,07*SCRWID+07+12
+       BL   @SETSUB
+       DATA MAINDR,MAIND
+*
+SETSUB MOV  *R11+,R14
+       MOV  *R11,R15
+       BL   @COMB
+       DATA SETLST
+SETRES MOV  R3,R3
+       JNE  NSETRT
+       CI   R0,>0D00
+       JEQ  TAKDF1
+       MOVB R0,*R14
+       SRL  R0,8
+       AI   R0,->30
+       MOV  R0,*R15
+TAKDF1 B    *R13
+NSETRT CI   R0,>0D00
+       JNE  NODEF2
+       MOVB @MAINDR,R0
+NODEF2 SRL  R0,8
+       AI   R0,->30
+       B    *R13
+*
+SETCPY CLR  R3
+       MOV  R11,R13
+       MOVB @COPYDR,@CPDRAS
+       BL   @SHOW$1
+       DATA CPDR$,09*SCRWID+07
+       LI   R1,09*SCRWID+07+12
+       BL   @SETSUB
+       DATA COPYDR,COPYD
+*
+* format disk chosen
+INIT   SETO @IGNFER           ignore any format errors which pop up
+       SETO @FOROPR           SET FORMAT OPERATION FLAG
+       BLWP @GETDRV
+       DATA >0000             main disk
+       JNE  FCONT             disk was already formatted
+       BL   @CLTOP            clear top of screen
+FCONT  CLR  @FOROPR
+       ABS  @HRDS
+       JEQ  INIT1
+       B    @FORWIN           format a winchester
+INIT1  MOV  @MAIND,R3
+       BL   @FORMAT
+       CLR  @IGNFER
+       B    @LEV0RT
+*
+CLTXT  BYTE 18
+       TEXT 'CLONE From Sector:'
+       BYTE 10
+       TEXT 'To Sector:'
+       BYTE 8
+       TEXT 'Reading:'
+       BYTE 8
+       TEXT 'Writing:'
+       EVEN
+       ABS  @HRDS
+       JEQ  INIT1
+       B    @FORWIN           format a winchester
+INIT1  MOV  @MAIND,R3
+       BL   @FORMAT
+       CLR  @IGNFER
+       B    @LEV0RT
+*
+* CKPP   MOV  @BDUSED,R14
+*      JNE  NOPPRO
+*      CB   @VOLUME+16,@H50
+*      JNE  NOPPRO
+*      MOV  R11,R14
+*      BL   @OTHERR
+*      DATA CTXT14
+*      BLWP @HONK
+*      BL   @CONABO
+*      MOV  *R14,R11
+*      B    *R11
+* NOPPRO B    @2(R11)
+*
+CLTXT  BYTE 18
+       TEXT 'CLONE From Sector:'
+       BYTE 10
+       TEXT 'To Sector:'
+       BYTE 8
+       TEXT 'Reading:'
+       BYTE 8
+       TEXT 'Writing:'
+       EVEN
+INIT   SETO @IGNFER           ignore any format errors which pop up
+       SETO @FOROPR           SET FORMAT OPERATION FLAG
+       BLWP @GETDRV
+       DATA >0000             main disk
+       JNE  FCONT             disk was already formatted
+       BL   @CLTOP            clear top of screen
+FCONT  CLR  @FOROPR
+       ABS  @HRDS
+       JEQ  INIT1
+       B    @FORWIN           format a winchester
+INIT1  MOV  @MAIND,R3
+       BL   @FORMAT
+       CLR  @IGNFER
+       B    @UTIL
+*
+CKPP   MOV  @BDUSED,R14
+       JNE  NOPPRO
+       CB   @VOLUME+16,@H50
+       JNE  NOPPRO
+       MOV  R11,R14
+       BL   @OTHERR
+       DATA CTXT14
+       BLWP @HONK
+       BL   @CONABO
+       MOV  *R14,R11
+       B    *R11
+NOPPRO B    @2(R11)
+*
+CLTXT  BYTE 18
+       TEXT 'CLONE From Sector:'
+       BYTE 10
+       TEXT 'To Sector:'
+       BYTE 8
+       TEXT 'Reading:'
+       BYTE 8
+       TEXT 'Writing:'
+       EVEN

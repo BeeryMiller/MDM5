@@ -1,0 +1,88 @@
+*
+* FOR RELOAD OF MDM5 MUST 1ST SEE IF THE PATH IS OTHER THEN DSK1
+*
+REHED  EQU  MAINWS+6     PUT HEADER INFO INTO R3,R4,R5
+*
+DOSTRM SETO R10          SET FLAG TO TRY LOADING STREAMER CODE
+       JMP  RELD
+RELOAD LWPI MAINWS       MAKE SURE WS WON'T GET OVER WRITTEN
+       CLR  R10          CLEAR STREAMER FLAG
+       CLR  R9           CLEAR mdm5/mdmv flag
+RELD   BL   @CLRLN       REMOVe any message from lineS 18-20
+       DATA MCL*18,3
+       BLWP @VMBW        Move load pab to vdp
+       DATA >0F80
+       DATA RELPAB
+       DATA 19           LOAD dsk1 pab
+       LI   R8,>0F92     LOCATion for mdm5 for dsk1 load
+* Now test if path is other then dsk1
+       MOVB @PATMDM,R1   GET LENGTH OF PATHNAME
+       AI   R1,>0400     ADD In the size of word MDM5
+       MOV  R1,R4        SAVE A COPY OF LENGTH
+       LI   R0,>0F89     POINT to length of file name
+       BLWP @VSBW        SET To new length
+       LI   R0,>0F8A     NOW Move it to vdp
+       LI   R3,PATMDM
+       MOVB *R3+,R2      GET Length to move
+       SRL  R2,8
+MDMMOV MOVB *R3+,R1      GET A byte
+       BLWP @VSBW        WRITE
+       INC  R0
+       DEC  R2
+       JNE  MDMMOV       IF NOt zero continue
+       MOV  R0,@MDMMVD
+       BLWP @VMBW
+MDMMVD DATA 0            LOCATion to put MDM5
+       DATA RELPB1+5
+       DATA 4
+       AI   R0,3         POINT to last character in MDM5
+       MOV  R10,R10      DOING STRAMER LOAD
+       JEQ  RELOD        NO
+       MOV  R0,@STMD     LOCATION TO PUT NAME
+       BLWP @VMBW        LOAD 'SBACKUP'
+STMD   DATA 0
+       DATA MDMS
+       DATA 7
+       AI   R4,>0600     ADD 6 TO THE LENGTH OF LOADNAME
+       MOV  R4,R1
+       LI   R0,>0F89
+       BLWP @VSBW        GO LOAD IT
+*
+RELOD
+RELOD1 LI   R1,>0F89
+       MOV  R1,@>8356
+       BLWP @DSRLNK
+       DATA 8
+       JNE  RELOD2       NO ERROR IF EQUAL NOT SET
+NOLOAD BL   @STERR
+       DATA REFAIL
+       DATA 10
+       MOV  R10,R10      TRYING TO LOAD STREAMER
+       JEQ  NOSFAL       NO
+       CLR  R10
+       BLWP @VMBW
+       DATA MCL*21+8+6
+       DATA MDMS
+       DATA 7
+NOSFAL BLWP @HONK
+       B    @EXTERR      Go to ask about exit
+RELOD2 BLWP @VMBR
+       DATA >1000        Get file header info
+       DATA REHED
+       DATA 6
+RELOD3 MOV  R3,R3        GOT A null header
+       JEQ  RELOD4
+       MOVB @VAR,@RELPB1+8 TRY mdmV
+       MOV  R9,R9        TRIED already
+       JNE  NOLOAD       YES
+       SETO R9
+       B    @RELD
+RELOD4 MOV  R4,@RELD2     Length to move
+       MOV  R5,@RELD1    START LOAD/RETRY POINT
+       BLWP @VMBR
+       DATA >1006
+RELD1  DATA 0
+RELD2  DATA 0
+       B    *R5          Begin execution
+*
+SLAST

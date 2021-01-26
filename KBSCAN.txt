@@ -1,0 +1,77 @@
+***
+*
+*    BLWP @KBSCAN
+*
+*  RETURNS VALUE OF KEY PRESSED ON THE KEYBOARD
+*  IF THERE IS ONE PRESSED AND REPEATS IF THE KEY STAYS
+*  PRESSED AFTER A LENGTH OF TIME
+*  RETURNS STATUS IN CPU STATUS BITS AS FOLLOWS:
+*
+*    NO KEY PRESSED - EQUAL BIT RESET
+*    NEW KEY PRESSED - EQUAL BIT SET
+*    REPEATING KEY - CARRY BIT SET AND EQUAL BIT SET
+*
+***
+*
+GPLWS  EQU  >83E0
+SCAN   EQU  >000E
+STATUS EQU  >837C
+KEYVAL EQU  >8375
+DELAY1 DATA 450          *INITIAL REPEAT DELAY
+DELAY2 DATA 60           *SECOND AND OVER REPEAT DELAY
+KBSCAN DATA HIREG2,KSCAN1
+KSCAN1 LI   R3,>0400
+       MOVB R3,@>8374    *PASCAL KEYBOARD SCAN
+       MOV  @>83C4,R3
+       CLR  @>83C4
+       LIMI 2
+       LIMI 0
+       MOV  R3,@>83C4
+       LWPI GPLWS
+       BL   @SCAN        *CHECK KEYBOARD
+       LWPI HIREG2
+       MOVB @KEYVAL,R3        get keycode
+       CB   @HFF,R3      *MAKE SURE THERE IS A KEY PRESSED
+       JEQ  CLREQU       *NO KEY PRESSED
+********* REMOVE RS-BUG SUPPORT
+*      CB   R3,@H7C           |
+*      JMP  KSCAN4            don't allow rsbug entry
+*   rs-bug support
+*      MOV  @0,R3
+*      CI   R3,>83E0
+*      JEQ  KSCAN3
+*      BL   @>1000            Rsbug in 95 EPROM
+*      JMP  CLREQU            Indicate no key pressed
+* KSCAN3 BL   @>6000            Rsbug in supercart
+*      JMP  CLREQU            Indicate no key pressed
+******* end of rsbug support
+KSCAN4 CB   R3,@H8E           f5 key?
+       JNE  $+6
+KABORT B    @LEV0RT           return all the way
+       ABS  @KEYCAS           convert to lowercase?
+       JEQ  KSCAN5            no
+       CB   R3,@LOWA          'a'?
+       JL   KSCAN5            no
+       CB   R3,@LOWZ          'z'?
+       JH   KSCAN5
+       SB   @H20,@KEYVAL      convert to uppercase
+KSCAN5 CLR  *R13
+       MOVB @STATUS,R3
+       ANDI R3,>2000     *SEE IF IT WAS PRESSED LAST TIME
+       JEQ  REPEAT       *YES, IT IS A REPEAT KEY
+       MOVB @KEYVAL,*R13 *JUST PRESSED, MOVE VALUE TO R0 OF CALLING WS
+       MOV  @DELAY1,@KCOUNT *INITIALIZE COUNTER FOR FIRST DELAY
+       ANDI R15,>EFFF    *CLEAR CARRY BIT AND
+       JMP  SETEQU       *SET EQUAL BIT
+REPEAT DEC  @KCOUNT      *SEE IF DELAY IS UP
+       JNE  CLREQU       *NO, CLEAR EQUAL BIT AND RETURN
+       ABS  @C9640            99/4a or 9640?
+       JNE  CLREQU            9640 - let it handle repeaters
+       MOVB @KEYVAL,*R13 *YES, MOVE VALUE TO R0
+       MOV  @DELAY2,@KCOUNT *INITIALIZE COUNTER FOR SECOND DELAY
+       ORI  R15,>1000    *SET CARRY BIT TO SHOW A REPEAT CHARACTER
+SETEQU ORI  R15,>2000    *SET EQUAL BIT
+       RTWP
+CLREQU ANDI R15,>CFFF    *CLEAR EQUAL & CARRY BITS
+HFF    EQU  $-1          *MAKE CONSTANT
+       RTWP

@@ -1,0 +1,624 @@
+*** MODULE NAME - DIR ***
+*
+* by mike dodd
+*
+* the purpose of this file is to contain the entire coding for
+* creating, moving, renaming, and deleting subdirectories.
+*
+* when dir01 is invoked, <d>irectory has just been chosen from the main
+* menu. handle appropriately.
+* NOTE: MUST CHANGE THE DISPLAY MESSAGE FOR MDM NOT FOUND AND LOADER
+*       WITH EACH VERSION
+*
+DIR01  BLWP @BEEP
+       CLR  @IGASUB
+       BL   @CLTOP
+       BL   @SCRGEN
+       DATA TTXT1,TADDR1,6
+       BL   @GENCOM           Generate a command line
+       DATA DIRSCR            com line for directories
+       BL   @COMNB            Command parser
+       DATA DIRCOM            command list
+       JMP  DIR01
+DIRPL  BL   @CLTOP
+       BL   @CLRCOM
+       BL   @OTHERR
+       DATA DIRILL                  "illegal operation"
+       BL   @CONABO
+       JMP  DIR01
+*
+*  Create Directory
+*   Outline of operation:
+*      Get subdirectory from winchester only
+*      Clear screen
+*      Ask for 10-character new subdirectory name
+*      Proceed
+*
+CD01   BL   @CLRCOM           clear command line
+       SETO @IGFSUB           ignore floppy subs
+       BLWP @GETDRV           get drive number
+       DATA >0000             main disk
+       CLR  @IGFSUB           don't ignore floppy subs
+       ABS  @HRDS             hard or floppy?
+       JNE  CD03
+*  see if any room for another subdir on the floppy
+       LI   R0,VOLUME+20      point to start
+       LI   R1,3              three max
+* THE FOLLOWING ROUTINE MUST BE CHANGED TO MAKE SURE THE THERE IS REALLY A
+* SUB-DIRECTORY THERE. THIS IS DUE TO THE FACT THAT IT APPEARS THE HRD PUTS
+* A HEX 01 IN THE 1ST BYTE POSITION OF A SUB-DIRECTORY AND MY PROGRAM USES
+* WHAT IS THE START OF THE SECOND SUB-DIRECTORY FOR THE DATE. SINCE A SUB-
+* DIRECTORY must contain a valid FDR sector
+CD02   MOV  R0,R2             SAVE R0
+       AI   R2,10             TEST IF THERE IS A VALID FDR FOR IT
+       MOV  *R2,R2            IF ZERO ITS NOT
+       JNE  CD02T             ITS VALID
+       MOVB R2,*R0            MAKE 1st byte of name a null so its passes through
+       JMP  CD03
+CD02T  AI   R0,12             YES, SO ITS A VALID SUB-DIR TRY next
+       DEC  R1
+       JNE  CD02
+CD02A  JMP  DIRPL
+CD03   BL   @SHOW$1
+       DATA CDD2,19*SCRWID+1
+       LI   R0,19*SCRWID+27   screen address
+       LI   R1,VCOM+21        cpu buffer
+       MOVB @H00,*R1          length = 0 (null string)
+       BLWP @INPUT            get string
+       DATA 10,'. '           max length,illegal characters
+       JOC  CD04A             exit key used - exit back to dir01
+       MOVB *R1+,R2           get length
+       MOV  R1,@>834E         save for dsr subroutine
+       SRL  R2,8              to lsby
+       A    R2,R1             point past last character
+       SWPB R2
+       AB   @PATHS,R2
+       CB   R2,@H20           too long?
+       JLE  $+6               no
+       B    @DIRPL            too long - abort
+       LI   R0,10             ten chars absolute max - there's room to
+*                                     write past filename.....
+CD04   MOVB @H20,*R1+         space
+       DEC  R0                any more?
+       JNE  CD04              keep spacing
+       ABS  @HRDS             hard or floppy?
+       JEQ  CD05              floppy . . . .
+       BLWP @DSRSUB           dsr subroutine
+       DATA >A8               create directory, cpu
+CD04A  B    @DIR01            all done.... stay in directory operations
+*  create the subdir on floppy . . . . .
+*   first, see if same name as another subdir on here. . . .
+* ONCE AGAIN MUST TEST IF ANY OF THE 10 BYTES ARE LESS THAN A SPACE
+* IF THEY ARE THEN ITS OK TO USE THIS AS A DIR
+CD05   LI   R0,VOLUME+20      start
+CD06   MOV  R0,R1
+       MOV  R0,R2             get first character
+       AI   R2,10             TEST IF THERE IS A VALID FDR FOR IT
+       MOV  *R2,R2            IF ZERO THEN ITS NOT VALID
+       JEQ  CD08              ITS ZERO
+       MOV  @>834E,R2         get address of new dir name
+       BL   @COMP$
+       JEQ  CD02A             equal - not good
+       AI   R0,12
+       CI   R0,VOLUME+56      at end?
+       JNE  CD06              no
+       JMP  CD02A             jerk must have switched disks... error out
+CD08   MOV  R0,R1             get address to store name in sector 0
+       MOV  @>834E,R0         get address of new subdir name
+       BL   @MOVE1            move 10 bytes. . . .
+       DATA 10
+       MOV  R1,R6             save
+       BL   @MOVE             getsec only works on cpyvol, so sucker it
+       DATA VOLUME,CPYVOL,>100        out
+       CLR  R2                i don't really care what sector you allocate
+       BL   @GETSEC           get it
+       MOV  R2,R3             save
+       BL   @MOVE             restore volume, as cpyvol changed the bitmap
+       DATA CPYVOL,VOLUME,>100
+       MOV  R3,*R6            save to sector 0 position
+       BL   @FILL
+       DATA TEMP,256,>0000    clear temp out
+CD09   MOV  R3,R0             get sector #
+       LI   R1,TEMP           buffer
+       BLWP @WSCPU            write sector
+       DATA CD09
+       BL   @SFD              sort dirs and write to disk
+       B    @DIR01            start again
+*
+*  Delete Directory
+*   Outline of operation
+*      Get subdirectory from winchester only
+*      Check to see if any subdirectories or files
+*      If so, illegal operation
+*      If not, proceed
+*
+DD01   BLWP @GETDRV           get drive number
+       DATA >0000             main disk
+       MOVB @PATHS,R0         get length
+       JNE  DD01B
+DD06   B    @DIRPL            can't delete root directory, dummy!
+DD01B  ABS  @HRDS             hard or floppy?
+       JEQ  DD11              floppy - handle different
+       MOV  @VOLUME+>16,R0    Get number of files
+       JNE  DD06              Files present - not allowed
+       MOV  @VOLUME+>1C,R0    First subdirectory number
+       JNE  DD06              Subdirs present - illegal
+*    find place up to chosen directory, and reselect via pathmn sub
+       LI   R0,PATHS+1        pathname for main disk past length byte
+       CLR  R2                length
+       MOV  @LEVEL,R1         get level number
+       DEC  R1                if level 1, will be first subdir name
+       JEQ  DD02A             well, then don't try to find it!
+DD02   AI   R2,>0100          add one to length
+       CB   *R0+,@DECMAL      period?
+       JNE  DD02              no
+       DEC  R1                level to 0?
+       JNE  DD02              nope
+DD02A  MOVB R2,@PATHS         set length
+       BLWP @PATHMN           set pathname
+       LI   R1,VCOM+10        place for name
+DD03   MOVB *R0+,*R1          write character
+       CB   *R1+,@DECMAL      period?
+       JNE  DD03              no
+       DEC  R1                back up
+       LI   R0,10             ten spaces
+DD04   MOVB @H20,*R1+         write space
+       DEC  R0
+       JNE  DD04              keep going
+       LI   R0,VCOM+10
+       MOV  R0,@>834E         set address
+       BLWP @DSRSUB
+       DATA >A9               delete directory, cpu
+       B    @DIR01            continue with directory ops
+*   delete floppy directory
+DD11   MOV  @S1BUFF,R0        get first number in file pointers block
+       JNE  DD06              not a 0 - files must be present.
+       BL   @FFS              find the sub
+       MOV  R5,R0             source
+       BL   @FILL0
+       DATA 10,>0000          clear it out
+       MOV  *R0,R3            get sector number of file pointers block
+       CLR  *R0               clear it out
+       BL   @FRESEC           free the sector from the bitmap
+       BL   @SFD              sort floppy directories
+       B    @DIR01
+*
+*  Rename directory
+*   Outline of operation
+*      Get subdirectory
+*      Allow user to type new name over old one on pathname display
+*      If names are the same, don't do anything
+*      If names are different, rename the monster
+RD01   BLWP @GETDRV           get drive number
+       DATA >0000             main disk
+*  set pathname to directory holding subdir we are renaming
+       LI   R0,PATHS          pathname for main disk
+       MOVB *R0+,R2           get length byte
+       JNE  RD01A
+RDERR  B    @DIRPL
+RD01A  CLR  R2                length
+       MOV  @LEVEL,R1         get level number
+       DEC  R1                if level 1, will be first subdir name
+       JEQ  RD03              well, then don't try to find it!
+RD02   AI   R2,>0100          add one to length
+       CB   *R0+,@DECMAL      period?
+       JNE  RD02              no
+       DEC  R1                level to 0?
+       JNE  RD02              nope
+RD03   MOVB R2,R4             save
+       ABS  @HRDS             hard or floppy?
+       JEQ  RD03A             floppy
+       MOVB R2,@PATHS         set length
+       BLWP @PATHMN           set pathname
+RD03A  MOV  R0,R3             save r0
+       BL   @FILL
+       DATA VCOM+20,22,>2000  fill with spaces
+       LI   R1,VCOM+20
+       LI   R0,VCOM+31        copy into input buffer
+RD04   CB   *R3,@DECMAL       period?
+       JEQ  $+8               yes
+       MOVB *R3+,*R1          write character to original buffer
+       MOVB *R1+,*R0+         copy to input buf
+       JMP  RD04
+       SRL  R4,8              to lsby
+       AI   R4,6              plus wdsx. and screen blanks
+       MOV  R4,R0
+       LI   R1,VCOM+30        length byte
+       MOVB @H0A,*R1          null string
+       BLWP @INPUT
+       DATA 10,'. '           ten chars max,illegal chars
+       JOC  RD05A
+       MOVB *R1,R0            get length byte
+       MOVB R0,R2             save length
+       SRL  R0,8              to lsby
+       A    R0,R1             point to last used character
+       CB   *R1,@DECMAL       period?
+       JNE  RD05              no
+       MOVB @H20,*R1          space over period
+RD05   ABS  @HRDS             hard or floppy?
+       JEQ  RD06              floppy
+       AB   @PATHS,R2
+       CB   R2,@H20
+       JH   RDERR
+       LI   R0,VCOM+20
+       MOV  R0,@>8350
+       LI   R0,VCOM+31
+       MOV  R0,@>834E
+       BLWP @DSRSUB
+       DATA >AA               rename directory, cpu
+RD05A  B    @DIR01            directory operations
+*
+RD06   BL   @FFS
+       MOV  R5,R1             destination
+       LI   R0,VCOM+31        source - the new pathname
+       BL   @MOVE1
+       DATA 10                ten chars
+       BL   @SFD              sort floppy directories and write 'em out
+       B    @DIR01            back to menu
+*
+*
+* Data layout for backup data passing:
+* >00 sectors per au
+* >02 winchester drive number
+* >03 floppy drive numbers (eight numbers, null terminated if less than 8)
+*     (if first number is a >00, then use streamer tape)
+* >0B backup type: >00 = backup changed files
+*                  >FF = backup all files
+* >0C operation: >00 = restore
+*                >01 = backup without print
+*                >02 = catalog
+*                >FF = backup with print
+* >0D drive defaults - sides(ascii),density(ascii),tracks(hex) for dsk1-8
+* >25 restore: >00 = overwrite all protected files
+*              >01 = prompt before overwriting
+*              >02 = skip protected files
+* >26 date - six characters (mmddyy)
+* >2C blank four-byte buffer
+* >30 CRU base for winchester controller
+* >32 pointer to printer name (length byte first)
+* >34 pointer to pathname for reloading MDM5
+*
+*
+BKDAT  BSS  50
+       DATA OUTPUT            pointer to printer name
+       DATA MDRLPT            pointer to pathname for reloading of mdm5
+*
+***
+* device name will be inserted into vdp pab
+BKPAB  DATA >0500,VCBUF+>80,0,>2000,0
+       TEXT 'M'
+HDD    TEXT 'DM'
+BKNAMB TEXT 'DB40'
+*
+*** directory utilities
+*
+DIRUTL BL   @CLRCOM
+       BL   @SHOW$1
+       DATA BKT7,22*SCRWID+6
+       BL   @COMNB
+       DATA BKL7
+DU00A  MOVB @H43,@BKNAMB      'C'
+       MOVB @H43,@BKSCRB
+       SETO @IGASUB           ignore hard drive subdirectories
+       JMP  DU01
+DU00B  MOVB @HDD,@BKNAMB      dash
+       MOVB @HDD,@BKSCRB
+       CLR  @IGASUB           do NOT ignore hard drive subdirectories
+DU01   BL   @CLTOP            clear top
+       BL   @CLRCOM           clear command line
+       BL   @SCRGEN
+       DATA DUT1,DUA1,2
+       BL   @COMNB
+       DATA DUC1
+*
+* Catalog backup disk
+BKCAT  MOVB @H02,@BKDAT+>0C
+       B    @BK18             load the sucker
+*
+* Backup
+BK01   MOVB @HFF,@BKDAT+>0C   operation = backup
+*   read date from clock card
+*      BL   @SWPDSR           swap that mother
+       MOV  @WDPRES,R12
+       SBO  0                 turn it on
+       LI   R0,>4FFA          tens years
+       LI   R1,GENBUF
+       LI   R3,6              six digits
+BK01A  MOVB *R0,R2            get it
+       ANDI R2,>0F00          mask out high nibble
+       AI   R2,>3000          plus ascii offset
+       MOVB R2,*R1+
+       DECT R0
+       DEC  R3
+       JNE  BK01A
+       MOV  @GENBUF+0,@BKDAT+>2A       year
+       MOV  @GENBUF+2,@BKDAT+>26       month
+       MOV  @GENBUF+4,@BKDAT+>28       date
+       SBZ  0                 turn wds card off
+*      BL   @SWPDSR           swap normal dsr page back in
+       JMP  $+8
+* Restore
+BK02   MOVB @H00,@BKDAT+>0C   operation = restore
+*  common for restore or backup
+       LI   R5,1              drive 1
+       LI   R4,LODRVS         TRACKS TABLE
+       LI   R6,D1SIDE
+       LI   R7,BKDAT+>0D
+BK03A  MOV  R5,@DRVNUM        set drive number
+       MOVB *R6+,*R7+         SIDES
+       MOVB *R6+,*R7+         DENSITY
+       MOVB *R4+,*R7+         TRACKS
+       INC  R5
+       CI   R5,8
+       JLE  BK03A
+       BLWP @GETDRV           get drive number
+       DATA >0200             winchester only, main disk
+       MOV  @NQFLAG,@>2036+254       SAVE FDR SECTOR #
+       BL   @VDPFIL           clear
+       DATA 2*SCRWID,19*SCRWID,>2000
+       BL   @SCRGEN
+       DATA BKT1,BKA1,2
+       MOVB @BKDAT+>C,R0
+       JEQ  BK04              restore
+       LI   R1,3*SCRWID+31    vdp location of date
+       BL   @WRITEV           set vdp write address
+       LI   R0,BKDAT+>26
+       LI   R1,3              three groups of digits
+BK03B  MOVB *R0+,*R8          write to vdp
+       MOVB *R0+,*R8          write to vdp
+       DEC  R1                any more?
+       JEQ  BK04              no
+       MOVB @SLASH,*R8
+       JMP  BK03B             keep going
+BK04   BL   @FILL
+       DATA GENBUF+10,8,>0000     fill out
+*      MOVB @RD96+1,R0        DON'T ALLOW 9640 RD TO BE USED FOR BACKUP/RESTORE
+*      AI   R0,>3000
+*      MOVB R0,@BKRD
+       LI   R0,3*SCRWID+13
+       LI   R1,GENBUF
+       CLR  *R1               null length
+       BLWP @INPUT
+       DATA 8
+       DATA >202E
+       JNC  $+6
+BKRET  B    @DU01
+       MOVB *R1+,R0
+       SRL  R0,8
+       A    R1,R0
+       MOVB @H00,*R0          set null terminator
+       LI   R0,BKDAT+>03      floppy drive list
+       LI   R2,8
+       ABS  @IGASUB           complete backup/restore?
+       JEQ  BK05              no
+       CB   *R1,@H53          's'?
+       JNE  BK05              no
+       CB   @1(R1),@H00       that all?
+       JNE  BK04              no - illegal
+       MOVB @H00,*R0          set >00 for streamer tape
+       JMP  BK08              continue
+BK05   MOVB *R1+,*R0
+       JEQ  BK08              null - done, obviously
+       CB   *R0,@H31          less than 1?
+       JL   BK04              yes
+       CB   *R0,@H38          greater than 8?
+       JH   BK04              yes
+       SB   @H30,*R0          make hex
+       MOVB *R0+,R3           get it
+       SRL  R3,8              to lsby
+       DEC  R3                base 0
+       CB   @HFF,@GENBUF+10(R3)   already set?
+       JEQ  BK04              duplicate drive numbers - a no-no
+       MOVB @HFF,@GENBUF+10(R3)   set it
+       DEC  R2                any more left to check?
+       JNE  BK05              no
+BK08   MOVB @BKDAT+>0C,R0     get operation
+       JNE  BK08B             some kind of backup - date should already be up
+* get date for restore operation
+       BL   @FILL
+       DATA BKDAT+>26,6,>2000
+       LI   R4,3*SCRWID+31    starting screen position
+       LI   R5,3              three positions to read
+       LI   R6,BKDAT+>26      place to put in buffer
+       LI   R7,BKDATR
+BK08C  MOV  R4,R0             vdp location
+*   write date defaults
+       LI   R1,GENBUF
+       MOVB @H02,*R1+
+       MOVB *R6,*R1+
+       MOVB @1(R6),*R1
+       DECT R1                back up to length byte
+       BLWP @INPUT
+       DATA 2,>202E           max length = 2
+       JNC  BK08A
+       CI   R0,>8F00          back?
+       JEQ  BKRET             yes
+       CI   R0,>8B00          up arrow?
+       JNE  BK08C             no - don't allow
+       CI   R5,3              already at first input?
+       JEQ  BK08C             yes - hard to go back much more
+       AI   R4,-3
+       INC  R5
+       DECT R6
+       DECT R7
+       JMP  BK08C             input again, then
+BK08A  CB   @H01,*R1+         just one character?
+       JNE  BK08F             nope - it's two
+BK08D  MOVB *R1,@1(R1)
+       MOVB @H30,*R1
+       MOVB @H02,@>FFFF(R1)
+       JMP  BK08E
+BK08F  CB   @H20,@1(R1)       last character a space?
+       JEQ  BK08D             yes
+       CB   @H20,*R1          first character a space?
+       JNE  BK08E             no
+       MOVB @H30,*R1
+BK08E  MOVB *R1,R2            get value
+       SRL  R2,8
+       AI   R2,->30           convert ascii to number
+       CI   R2,9
+       JH   BK08C             out of range - illegal
+       MPY  @H000A,R2
+       MOVB @1(R1),R2         get value
+       SRL  R2,8
+       AI   R2,->30           convert ascii to number
+       CI   R2,9
+       JH   BK08C             out of range - illegal
+       A    R2,R3             get total number
+       JEQ  BK08C             0 is not allowed
+       C    R3,*R7            too high?
+       JH   BK08C             yes
+       MOVB *R1+,*R6+
+       MOVB *R1+,*R6+
+       AI   R4,3              screen position
+       INCT R7                range pointer
+       DEC  R5                any more?
+       JNE  BK08C
+BK08B  LI   R0,5*SCRWID+14
+       LI   R1,VCOM
+       CLR  *R1               null length
+       BLWP @INPUT
+       DATA 20,>0000
+       JNC  $+6
+       B    @BKRET
+*   see if backup... if so, ask what type of backup
+       MOVB @BKDAT+>0C,R0     get operation
+       JEQ  BK12              restore
+       MOVB @H42,@BKNAMB+1    BACKUP
+       MOVB @H42,@BKSCRB+1    BACKUP
+       BL   @SCRGEN
+       DATA BKT2,BKA2,2
+       BL   @COMNB
+       DATA BKL2
+BK09   SETO R0
+       JMP  $+4
+BK10   CLR  R0
+       MOVB R0,@BKDAT+>0B     set backup type
+       BL   @SCRGEN
+       DATA BKT6,BKA6,2
+       BL   @COMNB
+       DATA BKL6
+BK11   AB   @H02,@BKDAT+>0C   change from >ff to >01
+       JMP  BK18
+*    restore... ask appropriate questions
+BK12   MOVB @H52,@BKNAMB+1    RESTORE
+       MOVB @H52,@BKSCRB+1    RESTORE
+       BL   @SHOW$1
+       DATA BKT3,7*SCRWID+2
+       CLR  R4                flag to set
+       LI   R1,7*SCRWID+35
+       BL   @COMB
+       DATA BKL3
+BK14   INCT R4
+       JMP  BK17
+BK15   BL   @SCRGEN
+       DATA BKT4,BKA4,2
+       LI   R1,10*SCRWID+21
+       BL   @COMB
+       DATA BKL4
+BK16   INC  R4
+BK17   SWPB R4
+       MOVB R4,@BKDAT+>25
+BK18   BL   @CLRCOM           in case error message on bottom of screen
+       BL   @VMBW
+       DATA VCBUF,BKPAB,9
+       LI   R1,MDRLPT
+       MOVB *R1+,R2           get length byte of pathname
+       MOVB R2,R0
+       AI   R0,>0700          plus 'mdmdbvv'
+       MOVB R0,*R8            write to vdp
+       SRL  R2,8
+       BL   @VMBW2
+       LI   R1,BKPAB+10       filename pointer
+       LI   R2,7              seven characters
+       BL   @VMBW2
+       LI   R0,VCBUF+9
+       MOV  R0,@>8356
+       BLWP @PRTLNK           dsrlnk routine
+       DATA >0008
+       JNE  BK19              no errors
+*   mdm-backup file not found
+       BL   @OTHERR
+       DATA FWTT4               1st show "ERROR: MDMDB29 file not found"
+       BL   @VMBW
+       DATA ERLN#*SCRWID+11,BKSCRB,4   now zap it to "D(C)B29"
+       BL   @CONABO
+       JMP  BK18
+*   mdm-backup file found
+*   set up data
+BK19   MOV  @SECAUS,@BKDAT
+       MOV  @WDPRES,@BKDAT+>30
+       MOVB @MAIND+1,@BKDAT+>02
+       BL   @MOVE             sector 1 list
+       DATA S1BUFF,>2036,254
+       BL   @MOVE
+       DATA BKDAT,>2000,>0036
+*  load program from vdp into cpu
+       LI   R1,BKDAT          temp buffer
+       BL   @VMBR             read vdp
+       DATA VCBUF+>82,4       length and start address words
+       MOV  @BKDAT+2,R1       start address
+       MOV  @BKDAT,R2         length
+       BL   @VMBR2            vdp address already set, so don't worry about it
+       MOV  @BKDAT+2,R0
+       B    *R0
+*
+* Sort floppy subdirectories
+*   Rather primitive, but the sucker works
+*   Assumes volume sector in VOLUME
+*   Writes sectors 0 and 1 back to disk upon completion of sort
+SFD    MOV  R11,R3            save return address
+SFD02  LI   R4,VOLUME+20      position 1
+       LI   R5,VOLUME+20+12   position 2
+       CLR  R6                do again flag
+       LI   R7,2              max of 2 swaps per attempt
+SFD03  MOVB *R5,R0            null?
+       JEQ  SFD04             yes - don't compare
+       MOVB *R4,R0            null?
+       JEQ  SFD05             yes - swap
+       MOV  R4,R1
+       MOV  R5,R2
+       BL   @COMP$            compare
+       JH   SFD05             swap out
+SFD04  AI   R4,12
+       AI   R5,12
+       DEC  R7                any more?
+       JNE  SFD03             yes
+       ABS  R6                any swaps made?
+       JNE  SFD02             yes - check again
+       MOV  R3,R11            restore return address
+       B    @UPDSM            update disk - will return to caller
+SFD05  SETO R6                a swap made
+       MOV  R4,R0             source
+       BL   @MOVE0            move
+       DATA TEMP,12           temp storage
+       MOV  R5,R0             source
+       MOV  R4,R1             destination
+       BL   @MOVE1            move
+       DATA 12
+       LI   R0,TEMP           source
+       MOV  R5,R1             destination
+       BL   @MOVE1            move
+       DATA 12
+       JMP  SFD04             continue
+*
+* Find position in volume sector of a subdir name (floppy only)
+*   Out: R5 = pointer to name in volume sector
+FFS    MOV  R11,R3            save return address
+       BL   @FILL
+       DATA TEMP,10,>2000     fill with spaces
+       LI   R0,PATHS          pathname
+       MOVB *R0+,R2           get length byte
+       SRL  R2,8              to lsby
+       DEC  R2                MINUS PERIOD*******
+       LI   R1,TEMP           destination
+       BL   @MOVER
+       LI   R5,VOLUME+20      first position to look at
+FFS02  LI   R1,TEMP           name we're looking for
+       MOV  R5,R2             place to search at
+       BL   @COMP$            compare
+       JEQ  FFS03             yes - we've got it
+       AI   R5,12             next position
+       JMP  FFS02             keep looking
+FFS03  B    *R3               return
+*

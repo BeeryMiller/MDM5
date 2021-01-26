@@ -1,0 +1,1213 @@
+**************** MODULE NAME - DATADORG *****************
+****** VDP memory map: ******
+*   Address      Description                 EQU     DATA
+* 0000 - 03BF    Screen
+* 03C0 - 0409    PAB for file I/O            PABLOC
+* 03C9           Length byte of PAB          PRTPNT
+* 040A - 040B    PAB for subroutine I/O      PABSUB  PAB10L
+* 040C - 04FF    ***** NOT USED *****
+* 0500 - 054F    Buffer for file I/O         PRTBUF
+* 0550 - 05FF    ***** NOT USED *****
+* 0600 - 06FF    Sector I/O buffer           VSECBF  GPLBUF
+* 0700 - 07FF    ***** NOT USED *****
+* 0800 - 0FFF    Character set
+* 1000 - 3FFF    Copy buffer                 VCBUF   VCOPBF
+*
+*** EQUATES ***
+VSECBF EQU  >0600
+VCBUF  EQU  >1000
+PABSUB EQU  >040A
+SCRWID EQU  40                Width of screen
+ERLN#  EQU  21                error messages line #
+FAC    EQU  >834A
+*** TST DATA ***
+ON     DATA >F081
+HONK   DATA HIREG2,HONK1
+BEEP   DATA HIREG2,BEEP1
+FFFLG  DATA 0
+BLINK  DATA 0
+CURLOC DATA 0
+BLKSPD DATA 20
+COMSV1 DATA 0
+COMSV2 DATA 0
+INPUT  DATA VDPRG2,INPUT1
+DC4000 DATA 0
+DCID   EQU  DC4000+1
+DRIV80 DATA WS80,DRIV81
+KCOUNT DATA 0
+C9640  DATA 0                 >0000 if 99/4a, >ffff if 9640
+DWFORM DATA 0
+VCFLAG DATA 0
+H0004  DATA 4
+PAB10L DATA PABSUB
+PAB10  DATA >0110
+PAB16  DATA >0116
+PAB20  DATA >0120             sector i/o for hard disk
+H1F00  DATA >1F00
+GPLBUF DATA VSECBF
+SECTOR DATA 0
+MSSEC  DATA 0
+RDPRES DATA 0
+DCPRES DATA 0
+WDPRES DATA 0
+CRCACC DATA 0
+SAVCM1 DATA 0
+RECURS DATA 0,0,0,0,0,0
+IGNFER DATA 0
+SAVRT  DATA 0
+SAVR2  DATA 0
+RSHRD  DATA SECWS,RSHRD1
+WSHRD  DATA SECWS,WSHRD2
+RSCPU  DATA SECWS,RSCPU1
+WSCPU  DATA SECWS,WSCPU1
+RSVDP  DATA SECWS,RSVDP1
+WSVDP  DATA SECWS,WSVDP1
+RSHRDX DATA SECWS,RSHRD2
+OTHRTN DATA 0
+CONTFG DATA 0                 CONTINUE OP FLAG
+LODRVS BYTE 40,40,40,40       TOTAL TRACKS TABLE DRIVES 1-4
+       BYTE 40,40,40,40       TOTAL TRACKS TABLE DRIVES 5-8
+*
+* Table for function keys in input routine
+HASH1  DATA INPKEY *AID
+       DATA ERASE  *CLEAR
+       DATA DELETE *DELETE
+       DATA INSERT *INSERT
+       DATA INPKEY *QUIT
+       DATA REDO   *REDO
+       DATA ERASE  *ERASE
+       DATA LEFT   *LEFT ARROW
+       DATA RIGHT  *RIGHT ARROW
+       DATA DOWN   *DOWN ARROW
+       DATA UP     *UP ARROW
+       DATA ENTER  *PROCEED
+       DATA ENTER  *ENTER
+       DATA BEGIN  *BEGIN
+       DATA BACK   *BACK
+       DATA INPKEY *FCTN 0
+KEYCAS DATA >0000             set if up case only, reset for up/low case
+LOWA   BYTE 'a'
+LOWZ   BYTE 'z'
+MAXADR DATA 0
+FLDADR DATA 0
+LENGTH DATA 0
+ORIG$  DATA 0
+FKEYS  DATA >0D20,>7F00
+DISALL DATA 0
+TADDR1 DATA 02*SCRWID+16,03*SCRWID+16,04*SCRWID+16
+       DATA 05*SCRWID+16,07*SCRWID+12
+       DATA 09*SCRWID+13,22*SCRWID+07
+CADDR5 DATA 19*SCRWID+13,22*SCRWID+17
+DERLST DATA >4363,ERRCON
+       BYTE >41
+H8F    BYTE >8F
+       DATA LEV0RT,>0000
+SERLST DATA >4363,DSRS1,>418F,LEV0RT,0
+* Command list for main menu
+CLIST1 DATA 'CC',CATLOG,'DD',DIR01
+       DATA 'FF',SR01,'QQ',BYE,'SS',DEFALT
+       DATA 'UU',UTIL2,>8686,REDOC,'VV',HEPM  *ADDED REDO (F8) FOR CATALOG
+H00    DATA 0
+*  note: the command list in the next line _must_ not have the
+*  order changed. it _must_ have the abort entry, then the continue
+*  entry, or else you need to modify the instruction at label CONAB3
+CNABL  DATA >8F45,LEV0RT,'CC',CNABR,0
+* Addresses for main menu
+CADDR1 DATA 22*SCRWID+06,23*SCRWID+06
+* FQLST  DATA >5979,FDISK,>4E8F,LEV0RT         y,n
+*      DATA >0D0D,LEV1RT,0
+FQLST  DATA >458F,LEV0RT,'FF',FDISK
+       DATA 0
+* FQLST1 DATA >5979,VOLCHG,>4E8F,LEV0RT
+*      DATA >0D0D,LEV1RT,0
+FQLST1 DATA >458F,LEV0RT,'FF',VOLCHG
+       DATA 0
+SUBERR DATA DUMMY,ERR3,DUMMY,DUMMY
+       DATA SE4,DUMMY,SE6,SE7
+ERRLST DATA ERR0,DUMMY,ERR2,ERR3,DUMMY,DUMMY,DUMMY,DUMMY
+       EVEN  *PUTS LEN$ ON WB
+LEN$   BYTE 0
+INBUFF TEXT '                    '
+       TEXT '                    '
+       TEXT '                    '
+       TEXT '                    '
+       TEXT '           '
+ERR    BYTE ' '
+       BYTE 'E'+>80
+       BYTE 'R'+>80
+       BYTE 'R'+>80
+       BYTE 'O'+>80
+       BYTE 'R'+>80
+       BYTE ':'+>80
+       BYTE ' '
+*
+ERR0   BYTE 20
+       TEXT 'No disk or no drive '
+ERR2   BYTE 19
+       TEXT 'Disk not formatted '
+ERR3   BYTE 16
+       TEXT 'Write protected '
+DUMMY  BYTE 21
+       TEXT 'Undefined disk error '
+SE4    BYTE 10
+       TEXT 'Disk full '
+SE6    BYTE 9
+H42    TEXT 'Bad disk '
+SE7    BYTE 21
+       TEXT 'File or subdir error '
+* FORMQ  BYTE 35
+*      TEXT 'Do you want to Format Disk (Y/N)? N'
+FORMQ  BYTE 14
+       BYTE 'E'+>80
+       TEXT 'xit    '
+       BYTE 'F'+>80
+       TEXT 'ormat'
+TTXT1  BYTE >07,>01,>02,>02,>02,>02,>02,>03  \
+       BYTE >06,>04,>4D,>59,>41,>52,>43       | MYARC logo characters
+       BYTE >03,>05,>06,>07                   |
+       BYTE >02,>08,>09                      /
+H09    EQU  $-1
+       BYTE 15
+       TEXT 'Disk Manager '
+       BYTE >16,>17           roman numeral V
+       BYTE 12
+       TEXT 'Version 1.60'
+EPROM  BYTE 10
+       TEXT 'EPROM H   '
+* Main command line.
+*  will look like:
+*      TEXT 'Catalog   Directory   Find'
+*      TEXT 'Quit      Setup       Utility'
+CTXT1  BYTE 26
+       BYTE 'C'+>80
+       TEXT 'atalog   '
+       BYTE 'D'+>80
+       TEXT 'irectory   '
+       BYTE 'F'+>80
+       TEXT 'ind'
+       BYTE 29
+       BYTE 'Q'+>80
+       TEXT 'uit      '
+       BYTE 'S'+>80
+       TEXT 'etup       '
+       BYTE 'U'+>80
+       TEXT 'tility'
+CTXT5  BYTE 13
+       TEXT 'Are you sure?'
+       BYTE 6
+       BYTE 'Y'+>80
+       TEXT 'es '
+       BYTE 'N'+>80
+       TEXT 'o'
+CNABT  BYTE 16
+       BYTE 'C'+>80
+       TEXT 'ontinue    '
+       BYTE 'E'+>80
+       TEXT 'xit'
+* List for "honk" sound
+HNKLST BYTE >04,>9F,>BF,>DF,>FF,1
+       BYTE >03,>C9,>3F,>D0,4
+       BYTE >01,>D1,3
+       BYTE >01,>D5,2
+       BYTE >01,>DB,1
+       BYTE >01,>DF,0
+* List for "beep" sound
+BEPLST BYTE >04,>9F,>BF,>DF,>FF,1
+       BYTE >03,>80,>05,>90,4
+       BYTE >01,>91,3
+       BYTE >01,>95,2
+       BYTE >01,>9B,1
+       BYTE >01,>9F,0
+H7C    BYTE >7C
+SV8002 BYTE >00
+HBA    BYTE >BA
+H8E    BYTE >8E
+       EVEN
+*** EXECOP DATA ***
+SWPDSK DATA >0000
+VCOPBF DATA VCBUF
+H0640  DATA >0640             1600 - max sectors normally in a bitmap
+H0C80  DATA >0C80             3200 - max unless 36 sectors per track
+UPDVOL DATA 0
+CPFLAG DATA 0
+VOLFLG DATA 0
+RCLUST DATA 0
+WCLUST DATA 0
+NOCONS DATA 0
+OVRALL DATA 0
+DSKFUL DATA 0
+TOTCOP DATA 0
+ENCPNT DATA CPYBUF+CLUSTR
+DECPNT DATA SECBUF+CLUSTR
+RFCLST DATA >5979,RFCY,>0D8C,RFCN,>4E6E,RFCN
+       DATA >8F8F,LEV1RT,0
+NRLIST DATA >8F41,WSTART,>4363,GOAHED,>0000
+DUPLST DATA >5979,RITOVR,>4E6E,NOROVR,>8F8F,LEV0RT
+       DATA >0D8C,NOROVR,>4161,RITOVA,0
+DRNLST DATA >5979,RNOVR,>4E6E,NORNO,>0D8C,NORNO
+       DATA >8F8F,ABORT2,>4161,RNOVRA,0
+CHDLST DATA >8F8F,LEV0RT,>0D8C,CHDRDY,>0000
+SPLST  DATA >3131,SPSKIP,>3232,ABORT1,>3333,ABORTA
+       DATA >4363,FILSOK,>8F8F,ABORT2,>0000
+SPADR  DATA 14*SCRWID+03,15*SCRWID+03,17*SCRWID+03
+       DATA 18*SCRWID+09,19*SCRWID+09
+DUPADR DATA 15*SCRWID+01,16*SCRWID+01,18*SCRWID+01
+CADR10 DATA 20*SCRWID+01
+CADR12 DATA 20*SCRWID+01
+CADDR7 DATA 23*SCRWID+01
+CADDR8 DATA 22*SCRWID+01,23*SCRWID+01
+NRADDR DATA 18*SCRWID+01,19*SCRWID+01
+FORMA2 DATA 19*SCRWID+13,22*SCRWID+17
+BDNUM  DATA 0
+MNMES  TEXT 'MAIN'
+CPMES  TEXT 'COP'
+Y      TEXT 'Y'
+********
+COMTAB DATA CTXT1,CADDR1,2
+       DATA CTXT2,CADDR2,2
+       DATA 0,0,0             not used, but can't delete because of use
+*                                     of relative offsets
+       DATA CTXT4,CADDR4,2
+COM5   DATA CTXT5,CADDR5,2
+       DATA CTXT6,CADDR6,2
+       DATA 0,0,0
+       DATA CTXT8,CADDR8,2
+       DATA CTXT9,CADDR9,2
+       DATA CTXT10,CADR10,1
+       DATA CTXT12,CADR12,1
+       DATA CTXT13,CADDR1,1
+       DATA CTXT13,CADDR1,1
+**************
+       BYTE 0 **** PUTS CPMES2 ON WORD BOUNDARY
+CPMES2 BYTE 25
+       TEXT 'Put '
+DRVNM2 TEXT 'COPY disk in Drive #'
+DNUM2  TEXT '1'
+CTXT8  BYTE 37
+       TEXT 'Put '
+DVNAM1 TEXT 'CO'
+H50    TEXT 'P'
+       TEXT 'Y'
+       TEXT ' disk('
+DNAME  TEXT '0123456789) in Drive #'
+DNUM   TEXT '1'
+* PRESS  BYTE 38
+*      TEXT 'Press ENTER to CONTINUE, BACK to ABORT'
+ABTXT  BYTE 35
+       TEXT 'OPERATIONS ABORTED - VOLUME DAMAGED'
+WARNMS BYTE 15                       \
+       BYTE '*'+>80,'*'+>80,'*'+>80   |
+       BYTE ' '+>80,'W'+>80,'A'+>80   | *** WARNING ***
+       BYTE 'R'+>80,'N'+>80,'I'+>80   | In inverse video
+       BYTE 'N'+>80,'G'+>80,' '+>80   |
+       BYTE '*'+>80,'*'+>80,'*'+>80  /
+NRMTXT BYTE 36
+       TEXT 'There is not enough room on the copy'
+       BYTE 39
+       TEXT 'disk to hold all of the files marked...'
+SPTXT  BYTE 29
+       TEXT 'There is not enough space for'
+       BYTE 30
+SPFNAM TEXT '           on the COPY disk...'
+       BYTE 28
+       TEXT 'PRESS '
+HI31   BYTE '1'+>80
+       TEXT ' TO Skip to next file'
+       BYTE 23
+       BYTE '2'+>80
+       TEXT '    Abort from here on'
+       BYTE 21
+       BYTE '3'+>80
+       TEXT '    Abort ALL copies'
+DUPTXT BYTE 34
+       TEXT 'Filename '
+DUPFN  TEXT '           already exists'
+       BYTE 20
+       TEXT 'on the COPY disk....'
+OVRTXT BYTE 35
+       TEXT 'Do you want to Overwrite (Y/N/All)?'
+CTXT10 BYTE 9
+       TEXT 'Deleting:'
+CTXT12 BYTE 12
+       TEXT 'Rename/Prot:'
+NMSMSG BYTE 14
+       TEXT 'Diskette Full '
+DFMSG  BYTE  15
+       TEXT 'Directory Full '
+*
+       EVEN
+FWBLWP DATA TEMP+6,FW09       blwp vectors
+*   now, must load the format routine
+FWPAB  DATA >0500,VCBUF+>80,0,>1800,>000C
+       TEXT 'DSK1.MDMFV60'
+*
+       EVEN
+FORPAT
+* TABLE USED TO PASS THE ADDRESSES OF ROUTINES IN MDM5 FOR
+* MDM-FORMAT TO USE FOR ITS OPERATION
+*
+*      ADDRESS           MDM-FORMAT PATCH #
+       DATA UTIL         *P1                 1
+FORPWS DATA 0            *MAIN WS            2
+       DATA CLRCOM       *P2                 3
+       DATA SCRGEN       *P3                 4
+       DATA INPUT        *P4                 5
+       DATA CONV32       *P4A                6
+       DATA BINDEC       *P4D                7
+       DATA BINDEC       *P4B                8
+       DATA VDPFIL       *P4C                9
+       DATA INPUT        *P5                 10
+       DATA IGNFER       *FW01B              11
+       DATA UTIL         *P6                 12
+       DATA ASCBIN       *FW01C              13
+       DATA COMB         *P7                 14
+       DATA CLTOP        *FW04               15
+       DATA SCRGEN       *P8                 16
+       DATA INPUT        *P9                 17
+       DATA COMPLP       *P10                18
+       DATA LEV0RT       *P11                19
+       DATA CLTOP        *FW04A              20
+       DATA CLRCOM       *P12                21
+       DATA SHOW$1       *P13                22
+       DATA SHOW$1       *P13A1              23
+       DATA SHOW$1       *P13A2              24
+       DATA SCRGEN       *P13A               25
+       DATA TTXT1        *P13B               26
+       DATA TADDR1       *P13C               27
+       DATA TEMP         *P14                28
+       DATA VMBW         *P15                29
+       DATA VMBW         *P16                30
+       DATA CONV32       *P17                31
+       DATA CONV32       *P18                32
+*
+       DATA BINDEC       *P20                33
+       DATA SHOW$1       *WE5D1              34
+       DATA COMNB        *WE5D2              35
+*
+FWTT3  BYTE 36
+       TEXT 'FATAL ERROR: Press '
+       BYTE 'E'+>80,'N'+>80,'T'+>80
+       BYTE 'E'+>80,'R'+>80
+       TEXT ' to continue'
+FWTT4  BYTE 23
+       TEXT 'MDMFV60 file not found '
+FWTT5  BYTE 17
+       TEXT 'Verifying: '
+FWVNUM TEXT '      '
+FWTT6  BYTE 14
+       TEXT 'Bad sectors: 0'
+DRNTXT BYTE 63
+       TEXT 'File: '
+ORIGFN TEXT '0123456789'
+       TEXT ' renamed to: '
+DUPRN  TEXT '0123456789 '
+       TEXT 'which already exists...'
+H04    BYTE >04
+FORMQ2 BYTE 14
+       TEXT 'Reformat copy?'
+       BYTE 6
+       BYTE 'Y'+>80
+       TEXT 'es '
+       BYTE 'N'+>80
+       TEXT 'o'
+CLUSTR EQU  28
+CPYIN  BYTE 11
+       TEXT 'Copying In:'
+CPYOUT BYTE 4
+       TEXT 'Out:'
+BDSC$  BYTE 36
+       TEXT 'Error occurred Reading Sector #'
+BDSCNO TEXT '     '
+       EVEN
+*** DISKMAIN DATA ***
+FCBLD  DATA FCBLEN
+SAVRT6 DATA 0
+CBUFFS DATA CPYVOL,CS1BUF
+MBUFFS DATA VOLUME,S1BUFF
+EMUFDR DATA 0                 fdr number of file for dsk1. emulation
+EMUFLG DATA 0                 set when file emulation number changed
+FREEAU DATA 0
+FREEMN DATA 0
+FREECP DATA 0
+CURSL  DATA 0
+TOPSL  DATA 0
+HRDS   DATA 0
+HRDD   DATA 0
+HRDX   DATA 0
+SECAUS DATA 0
+SECAUD DATA 0
+SECAUX DATA 0
+PATHX  DATA 0
+DIRAUX DATA 0
+DIRAUS DATA 0
+DIRAUD DATA 0
+DISMOD DATA 0
+SUBDST DATA 0
+FCBEND DATA 0
+DVMSK  DATA 0
+CATACC DATA 0
+SAVRT2 DATA 0
+SAVRT3 DATA 0
+STRSUB DATA FCBASE
+CPYBAS DATA FCBASE+2          FCB buffer + 2 for EOF flag
+TOPLIN DATA 0
+CURLIN DATA 0
+NUMFIL DATA 0
+H2000  DATA >2000
+SEEOP  DATA 0
+***
+*  Command list for Editor menu
+CLIST3 DATA >5373,SEE,>4D6D,MOVEF,>4464,DELF
+       DATA >8A0D,DOWN1,>8B8B,UP1,'11',DESET,'00',DERSET
+       DATA >8C18,PAGEN1,>1022,PCAT
+       BYTE >82
+H05    BYTE >05
+       DATA PAGE1
+       DATA >5070,PROTF,>4363,COPYF,>5676,VOLF
+       DATA >5272,RENAMF,>5575,UNPROF,>458F,LEV1RT
+       DATA >2020,ERACOM,>8382,ERACOM,>4262,BACKUP
+       DATA 'XX',EXECOP,0
+*  Command list for after-catalog
+CATLL  DATA 'RR',CATJR,>458F,LEV0RT,'UU',NOFLS
+       DATA >8A18,PAGEN1,>8B05,PAGE1
+       DATA >8C8C,PAGEN1,>8282,PAGE1
+       DATA >1022,PCAT,0
+CADDR2 DATA 22*SCRWID+01,23*SCRWID+01
+CADDR4 DATA 22*SCRWID+14,23*SCRWID+15
+HEADRA DATA 00*SCRWID+01,00*SCRWID+39
+COLADR DATA 04*SCRWID+01
+HEADUP DATA 0
+HFFFF  DATA >FFFF
+H0100  DATA >0100
+H01    EQU  H0100
+H80    EQU  $
+FLGNUM BYTE >80,>40,>28,>00
+CURDN  BYTE 0
+H10    BYTE >10
+H08    BYTE >08
+FLAGS  TEXT 'CDM '
+H07    BYTE >07
+HEB    BYTE >EB
+DV40TX BYTE 28
+       TEXT '80 trk disk in 40 trk drive '
+* Command line for editor screen
+*      TEXT 'Backup  Copy   Delete Exit      Move'
+*      TEXT 'Protect Rename See    Unprotect Xecute'
+CTXT2  BYTE 36
+       BYTE 'B'+>80
+       TEXT 'ackup  '
+       BYTE 'C'+>80
+       TEXT 'opy   '
+       BYTE 'D'+>80
+       TEXT 'elete '
+       BYTE 'E'+>80
+       TEXT 'xit      '
+       BYTE 'M'+>80
+       TEXT 'ove'
+       BYTE 38
+HI50   BYTE 'P'+>80
+       TEXT 'rotect '
+       BYTE 'R'+>80
+       TEXT 'ename '
+       BYTE 'S'+>80
+       TEXT 'ee    '
+       BYTE 'U'+>80
+       TEXT 'nprotect '
+       BYTE 'X'+>80
+       TEXT 'ecute'
+CTXT4  BYTE 13
+       BYTE 'L'+>80,'o'+>80,'a'+>80,'d'+>80,'i'+>80
+       BYTE 'n'+>80,'g'+>80,' '+>80,'f'+>80,'i'+>80
+       BYTE 'l'+>80,'e'+>80,'s'+>80
+       BYTE 11
+       BYTE 'P'+>80,'l'+>80,'e'+>80,'a'+>80,'s'+>80
+       BYTE 'e'+>80,' '+>80,'w'+>80,'a'+>80,'i'+>80
+       BYTE 't'+>80
+CATLT  BYTE 21
+       BYTE 'E'+>80
+       TEXT 'xit   '
+       BYTE 'R'+>80
+       TEXT 'oot   '
+       BYTE 'U'+>80
+       TEXT 'tility'
+DSKTXT TEXT 'DSK'
+WDSTXT TEXT 'WDS'
+       EVEN
+HEADRT BYTE 39
+       TEXT 'DSK .'
+       TEXT '           Vol:           '
+SIDE   TEXT 'SS'
+H53    EQU  $-1
+       TEXT 'DD/'
+FORM   TEXT '   '
+HEADR2 BYTE 40
+       TEXT '  Files'
+FILE   TEXT '  128   Used '
+USED   TEXT '         Free '
+FREE   TEXT '      '
+COLTXT BYTE 38
+H14    BYTE 20,32,20,20,20,20,20,20,20,20
+       BYTE 20,20,32,20,32,20,20,20,20,20
+       BYTE 20,32,20,20,20,20,20,20,20,32
+       BYTE 20,20,20,20,20,20,32,20
+TYPES  TEXT 'EMULATEPROGRAMINT/VARINT/FIXDIS/VARDIS/FIX'
+SPLINE BYTE 1,>0D
+SEEPAB BYTE 50,>00
+SEEREC BYTE >14,>05,>00
+SEELEN BYTE >00,>00,>00,>00,>00
+SEENL  BYTE >00
+       TEXT 'DSK'
+SEEDN  BYTE >00
+DECMAL BYTE '.'
+SEENAM TEXT '          '
+NVNAM  TEXT '           '
+       TEXT '              '
+H82    BYTE >82
+CATHL2 BYTE 27
+       TEXT 'Emulate:               Vol:'
+PCL1   BYTE 68
+       TEXT 'C Filename   E Size   Type    Length P   '
+       TEXT ' Created            Updated'
+PCL2   BYTE 78
+       TEXT '- ---------- - ------ ------- ------ -   '
+       TEXT ' -----------------  -----------------'
+***
+VCOM   EQU  LEN$+2
+VNAME  EQU  VCOM+3
+VTYPE  EQU  VNAME+18
+VLEN   EQU  VTYPE+7
+FCBLEN EQU  34  *LENGTH OF FCB + FLAG + NAME LENGTH + SECTOR NUMBER
+OPFLAG EQU  2   *OPERATION FLAGS
+FSTAT  EQU  16  *FILE STATUS FLAGS
+SECALL EQU  18  *SECTORS ALLOCATED FOR FILE
+OFFSET EQU  20  *OFFSET IN LAST SECTOR FOR VARIABLE AND PROGRAM IMAGE FILES
+RECLEN EQU  21  *LOGICAL RECORD LENGTH
+TOTSEC EQU  10  *SECTORS ON DISK
+SECTRK EQU  12  *SECTORS PER TRACK
+DSK    EQU  13  *'DSK'
+TRKSID EQU  17  *TRACKS PER SIDE
+SIDES  EQU  18  *NUMBER OF SIDES(1 OR 2)
+DENSE  EQU  19  *DENSITY - 1=SINGLE, 2=DOUBLE
+BITMAP EQU  56  *START OF BITMAP
+CATLOG EQU  CAT
+       EVEN
+*
+*** DIR DATA ***
+BKA1   DATA 3*SCRWID+1,5*SCRWID+1
+BKA2   DATA 7*SCRWID+1,8*SCRWID+8
+BKA4   DATA 9*SCRWID+2,10*SCRWID+2
+BKL2   DATA >3131,BK09,>3232,BK10,>8F8F,DU01,0
+BKL3   DATA >5979,BK15,>4E6E,BK14,>8F8F,DU01,0
+BKL4   DATA >5979,BK16,>4E6E,BK17,>8F8F,DU01,0
+DIRSCR DATA DIRSTX,$+4,2
+       DATA 22*SCRWID+08,23*SCRWID+08
+DIRCOM DATA >458F,LEV1RT,>4363,CD01,>4464,DD01
+       DATA >5272,RD01,>5575,DIRUTL,>5373,BK02,0
+BKL7   DATA 'CC',DU00A,'DD',DU00B,>8F45,DIR01,0
+BKDATR DATA 12,31,99          max values for date
+H34    BYTE >34
+SLASH  BYTE >2F
+DIRILL BYTE 18
+       TEXT 'Illegal operation '
+CDD2   BYTE 25
+       TEXT 'Enter new directory name:'
+*  Directory command line
+*      TEXT 'Create    Delete    Exit  '
+*      TEXT 'Rename    Utility         '
+DIRSTX BYTE 24
+       BYTE 'C'+>80
+       TEXT 'reate    '
+       BYTE 'D'+>80
+       TEXT 'elete    '
+       BYTE 'E'+>80
+       TEXT 'xit'
+H11    BYTE 17
+       BYTE 'R'+>80
+       TEXT 'ename    '
+       BYTE 'U'+>80
+       TEXT 'tility'
+BKT1   BYTE 36
+       TEXT 'Active drv:          Created:   /  /'
+       BYTE 12
+       TEXT 'Backup name:'
+*
+BKT2   BYTE 22
+       TEXT 'Press: '
+       BYTE '1'+>80
+       TEXT ' FOR all files'
+       BYTE 24
+       BYTE '2'+>80
+       TEXT ' FOR changed files only'
+*
+BKT3   BYTE 32
+       TEXT 'Overwrite protected files (Y/N)?'
+*
+BKT4   BYTE 23
+H52    TEXT 'Review filenames before'
+       BYTE 18
+       TEXT 'overwriting (Y/N)?'
+*
+BKSCRB TEXT 'DB60'
+*
+*
+BKA6   DATA 10*SCRWID+1,11*SCRWID+8
+BKL6   DATA >3131,BK18,>3232,BK11,>8F8F,DU01,0
+***
+*      TEXT 'Backup    Catalog'
+*      TEXT 'Exit      Restore'
+DUT1   BYTE 17
+       BYTE 'B'+>80
+       TEXT 'ackup    '
+       BYTE 'C'+>80
+       TEXT 'atalog'
+       BYTE 17
+       BYTE 'E'+>80
+       TEXT 'xit      '
+       BYTE 'R'+>80
+       TEXT 'estore'
+BKT7   BYTE 28
+       BYTE 'C'+>80
+       TEXT 'omplete   '
+       BYTE 'D'+>80
+       TEXT 'irectory    '
+       BYTE 'E'+>80
+       TEXT 'xit'
+H2D    BYTE '-'
+DUA1   DATA 22*SCRWID+12,23*SCRWID+12
+DUC1   DATA 'BB',BK01,'RR',BK02
+H43    DATA 'CC',BKCAT,>458F,DIR01,0
+*
+BKT6   BYTE 25
+       TEXT 'Press: '
+       BYTE '1'+>80
+       TEXT ' TO print catalog'
+       BYTE 18
+       BYTE '2'+>80
+       TEXT ' TO skip printout'
+*** SEARCH DATA ***
+SRT1   BYTE 9
+       TEXT 'Filename:'
+SRT2   BYTE 15
+       TEXT 'File not found '
+SRT3   BYTE 16
+       TEXT 'Search completed'
+*** DSKEMU DATA ***
+DEDRV  DATA 0
+DEFNAM BSS  10
+DET1   BYTE 15
+       TEXT 'Enter filename:'
+*** GETDRV DATA ***
+SUBLD  DATA SUBLEN
+*      TEXT 'Back   Continue   Directory'
+*      TEXT 'Exit   Root'
+GDFCX  DATA $+10,$+4,2
+       DATA 22*SCRWID+7,23*SCRWID+7
+       BYTE 27
+       BYTE 'B'+>80
+       TEXT 'ack   '
+       BYTE 'C'+>80
+       TEXT 'ontinue   '
+       BYTE 'D'+>80
+       TEXT 'irectory'
+       BYTE 11
+       BYTE 'E'+>80
+       TEXT 'xit   '
+       BYTE 'R'+>80
+       TEXT 'oot'
+*
+*
+* command lists
+GDL1   DATA 'FF',GD03,'HH',GD04
+       DATA >8F45,LEV0RT,0
+*   floppy list
+GDL2   DATA >8F8F,LEV0RT,>3132,GD06,>3334,GD06
+       DATA >3536,GD06,>3738,GD06,>3939,GD06,0
+*   hard list
+GDL3   DATA >3132,GD06,>3334,GD06,>8F8F,LEV0RT,0
+*
+GDL4   DATA SETS,MAINDR,MAIND,V1LOAD
+GDL5   DATA SETD,COPYDR,COPYD,C1LOAD
+* HARD LIST
+GDL6   DATA >458F,LEV0RT,>4262,GD49                  'E','B'
+       DATA 'RR',GDTOP1,>5070,GD39,>4363,GDCON       'R','P','C'
+       DATA >8A8A,GD31,>8B8B,GD35,>440D,GD30         down,up,enter/'D'
+       DATA >188C,GD37,>0582,GD38,>1022,PTREE,0      CTL/P-ALT/P, PgUp,PgDn
+* FLOPPY LIST
+GDL7   DATA >458F,LEV0RT,>8A8A,GD31,>8B8B,GD35       'E',down,up
+       DATA >4363,GDCON,>440D,GD30,'RB',GDTOP1,0     'C',enter/'D','R'/'B'
+*
+GDHEDT BYTE 35
+       TEXT 'Name        Dir/Sub Files   Created'
+*           '----------- ------- ------- ----------'
+       BYTE 38
+       BYTE 20,20,20,20,20,20,20,20,20,20
+       BYTE 20,32,20,20,20,20,20,20,20,32
+       BYTE 20,20,20,20,20,20,20,32,20,20
+       BYTE 20,20,20,20,20,20,20,20
+GDHEDA DATA 3*SCRWID+1,4*SCRWID+1
+*
+GDSVR6 DATA 0
+GDSVR7 DATA 0
+COMSV3 DATA 0
+COMSV4 DATA 0
+X1LOAD DATA 0                 either v1load or c1load, depending
+LEVEL  DATA 0                 level number of current subdirectory
+CURSUB DATA 0
+SUBLEN EQU  20                length of subdir block entries
+IGFSUB DATA >0000             ignore floppy subs on/off (on create subdir)
+IGASUB DATA >0000             ignore all subdirs on/off (for file search)
+BASELV DATA >0000             base level on top of screen
+SUBLIM DATA >0000             pointer to block for base level
+GWORFT BYTE 20
+       BYTE 'E'+>80
+       TEXT 'xit   '
+       BYTE 'F'+>80
+       TEXT 'loppy   '
+       BYTE 'H'+>80
+       TEXT 'ard'
+GDRVWT BYTE 24
+       TEXT 'Enter hard drive number:'
+GDRVFT BYTE 26
+       TEXT 'Enter floppy drive number:'
+       EVEN
+GDCOMX DATA $+10,$+4,2   2 lines
+       DATA 22*SCRWID+7,23*SCRWID+7
+*  as it appears on the screen:
+*      TEXT 'Back   Continue   Directory'
+*      TEXT 'Exit   Pathname   Root'
+       BYTE 27
+       BYTE 'B'+>80
+       TEXT 'ack   '
+       BYTE 'C'+>80
+       TEXT 'ontinue   '
+       BYTE 'D'+>80
+       TEXT 'irectory'
+       BYTE 22
+       BYTE 'E'+>80
+       TEXT 'xit   '
+       BYTE 'P'+>80
+       TEXT 'athname   '
+       BYTE 'R'+>80
+       TEXT 'oot'
+PTHBAD BYTE 22
+       TEXT 'Pathname non-existent '
+       EVEN
+*
+*** SETDEFAULT DATA ***
+DMNAME TEXT 'MDM5      '
+SAVRT4 DATA 0
+DEFLST DATA >8F8F,LEV1RT,>4565,LEV1RT,>4363,DEFEDI
+       DATA >4666,FOREC,>4262,BACKC
+       DATA >5373,DEFSAV,0
+* TABLE FOR DRIVE DEFAULTS
+DEFLS2 DATA >8B8B,UPD,>8A8A,DOWND,>8989,RIGHTD
+       DATA >5344,RIGHTD,>8888,LEFTD
+       DATA >8F8F,DEFRT3,>0D8C,RIGHTD,>0000
+* TABLE DEFAULT IN OUT DRIVES
+DEFLS3 DATA >8B8B,UP2
+       DATA >3132,RIGHT2,>8A8A,DOWN2,>8939,RIGHT2
+       DATA >8888,LEFT3,>0D8C,RIGHT2,>8F8F,DEFRT3
+       DATA >3334,RIGHT2,>3536,RIGHT2,>3738,RIGHT2,0
+* TABLE FOR SINGLE DRIVES INPUT
+DEFLS4 DATA >8B8B,UP2
+       DATA >594E,RIGHT2,>8A8A,DOWNS,>8989,RIGHT2
+       DATA >8888,LEFT3,>0D8C,RIGHT2,>8F8F,DEFRT3
+       DATA >796E,RIGHT2,0
+MATRIX DATA 2*SCRWID+17,2*SCRWID+35          main dr  copy dr
+MATR1  DATA 4*SCRWID+26,4*SCRWID+35          single dr flpy /hard
+DRVEND DATA 6*SCRWID+14,6*SCRWID+17          Defaults dr#1
+       DATA 6*SCRWID+32,6*SCRWID+35          dr#2
+       DATA 8*SCRWID+14,8*SCRWID+17          dr#3
+       DATA 8*SCRWID+32,8*SCRWID+35          dr#4
+       DATA 10*SCRWID+14,10*SCRWID+17        dr#5
+       DATA 10*SCRWID+32,10*SCRWID+35        dr#6
+MAT7   DATA 12*SCRWID+14,12*SCRWID+17        dr#7
+       DATA 12*SCRWID+32                     dr#8
+MATEND DATA 12*SCRWID+35
+DEFADR DATA 0*SCRWID+6,2*SCRWID+3,4*SCRWID+3
+       DATA 14*SCRWID+1
+       DATA 17*SCRWID+1,20*SCRWID+1
+CADDR6 DATA 22*SCRWID+04,23*SCRWID+04
+*      TEXT 'Background color   Change   Exit'
+*      TEXT 'Foreground color   Save'
+CTXT6  BYTE 32
+       BYTE 'B'+>80
+       TEXT 'ackground color   '
+       BYTE 'C'+>80
+       TEXT 'hange   '
+       BYTE 'E'+>80
+       TEXT 'xit'
+       BYTE 23
+       BYTE 'F'+>80
+       TEXT 'oreground color   '
+       BYTE 'S'+>80
+       TEXT 'ave'
+DEFDR  BYTE 34
+       TEXT 'Drive #1 = DS/DD  Drive #2 = DS/DD'
+DEFTXT BYTE 27
+       TEXT 'Setup Default Configuration'
+       BYTE 34
+       TEXT 'Main Drive = #     Copy Drive = # '
+       BYTE 33
+       TEXT 'Single Drives: '
+       TEXT 'Floppy? N  '
+       TEXT 'Hard? Y'
+       BYTE 14
+       TEXT 'Output Device:'
+       BYTE 31
+       TEXT 'Pathname for reloading of MDM5:'
+       BYTE 37
+       TEXT 'Color: Background =    Foreground =  '
+C$     BYTE 2
+       TEXT '  '
+SAVTXT BYTE 35
+       BYTE ' '
+       BYTE 'E'+>80
+       BYTE 'R'+>80
+       BYTE 'R'+>80
+       BYTE 'O'+>80
+       BYTE 'R'+>80
+       BYTE ':'+>80
+       TEXT ' MDM5 and/or MDMV not found '
+       EVEN
+*** CLONE DATA ***
+H0101  DATA >0101
+BDUSED DATA 0
+CLONFL DATA 0
+CLIST4 DATA 'Ff',INIT,'Cc',CLONE
+       DATA 'Tt',FDTEST,'Rr',RAMDSK,>458F,LEV1RT
+       DATA 'Dd',DSKEMU,0
+SETLST DATA >3132,SETRES,>3334,SETRES,>8F8F,LEV1RT
+       DATA >0D39,SETRES,>3536,SETRES,>3738,SETRES,0
+CADDR9 DATA 22*SCRWID+9,23*SCRWID+9
+*   (9640 menu addresses:)
+CADR9A DATA 22*SCRWID+10,23*SCRWID+10
+SCWADR DATA 17*SCRWID+4,18*SCRWID+4,19*SCRWID+4
+* MBFADR DATA 17*SCRWID+01,18*SCRWID+01,19*SCRWID+01,20*SCRWID+01
+CLADR  DATA 11*SCRWID+03,13*SCRWID+11
+       DATA 20*SCRWID+01,20*SCRWID+20
+STSCNM DATA >0000,>0000,>0000
+NDSCNM DATA >0000,>0000,>0000
+MNDR$  BYTE 13
+       TEXT 'MAIN DRIVE: '
+MNDRAS BYTE ' '
+CPDR$  BYTE 13
+       TEXT 'COPY DRIVE: '
+CPDRAS BYTE ' '
+* Looks like:
+*      TEXT 'Clone    DSK1      Exit'    30
+*      TEXT 'Format   RAMdisk   Test'           23
+CTXT9  BYTE 23
+       BYTE 'C'+>80
+       TEXT 'lone    '
+       BYTE 'D'+>80
+       TEXT 'SK1      '
+       BYTE 'E'+>80
+       TEXT 'xit'
+       BYTE 23
+       BYTE 'F'+>80
+       TEXT 'ormat   '
+       BYTE 'R'+>80
+       TEXT 'AMdisk   '
+       BYTE 'T'+>80
+       TEXT 'est'
+*
+*  (9640 menu)
+*      TEXT 'Clone    DSK1   Exit'
+*      TEXT 'Format   Test'
+CTXT9A BYTE 20
+       BYTE 'C'+>80
+       TEXT 'lone    '
+       BYTE 'D'+>80
+       TEXT 'SK1   '
+       BYTE 'E'+>80
+       TEXT 'xit'
+       BYTE 13
+       BYTE 'F'+>80
+       TEXT 'ormat   '
+       BYTE 'T'+>80
+       TEXT 'est'
+* CTXT14 BYTE 30
+*      TEXT 'MAIN Disk has Copy Protection '
+* MBFTXT BYTE 38
+*      TEXT 'WARNING:  MAIN Disk has a NON-Standard'
+*      BYTE 36
+*      TEXT 'Volume and May copy INCORRECTLY with'
+*      BYTE 38
+*      TEXT 'This Sector Copier.  In case of error,'
+*      BYTE 25
+*      TEXT 'A File Copy is suggested.'
+WVFEX  BYTE 4
+       BYTE 'E'+>80
+       TEXT 'xit'
+WVEREX DATA >8F45,LEV0RT,0
+REFWRN BYTE 31
+       TEXT 'Reformatting to Match MAIN disk'
+SECWRN BYTE 32
+       TEXT 'WARNING:  This is a SECTOR copy.'
+       BYTE 30
+       TEXT 'All files on COPY disk will be'
+       BYTE 13
+       TEXT 'written over.'
+NOCLRD BYTE 30
+       TEXT 'Clone will NOT fit on Ramdisk '
+SDFLG  TEXT 'SD'
+       EVEN
+*** SYSTESTS DATA ***
+PRTBUF EQU  >0500             Buffer for printer output
+PABLOC EQU  >03C0             Printer PAB
+CLOSIN DATA 0
+PRTPNT DATA PABLOC+9          Point to length byte of printer PAB
+DNF2   DATA 0
+NQFLAG DATA 0
+TOTERR DATA 0
+LOPFLG DATA 0
+LOGFLG DATA 0
+COMPAS DATA 0
+ODOPEN DATA 0
+TSTADR DATA 14*SCRWID+01,15*SCRWID+07,16*SCRWID+07
+LLADR  DATA 06*SCRWID+02,08*SCRWID+01
+INFADR DATA 11*SCRWID+06,13*SCRWID+01,15*SCRWID+04
+       DATA 17*SCRWID+08,20*SCRWID+06
+* TQLST  DATA >5979,TFDSK,>4E8F,UTIL
+*      DATA >0D8C,UTIL,0
+TQLST  DATA >458F,LEV0RT,'FF',TFDSK
+       DATA 0
+LOPLST DATA >5979,DOLOOP,>4E6E,NOLOOP,>8F8F,LEV1RT
+       DATA >0D8C,NOLOOP
+DUMBUF DATA 0  *ALSO SIGNALS END OF LOPLST
+LOGLST DATA >5979,DOLOG,>4E6E,NOLOG,>8F8F,LEV1RT
+       DATA >0D8C,NOLOG,0
+TSTLST DATA >3131,NQTEST,>3232,DQTEST,>3333,DCTEST
+       DATA >8F8F,LEV1RT,0
+IOELST DATA DVERR6,ERR3,DVERR6,DIRILL,DVERR6,DVERR6
+       DATA DVERR6,DVERR6
+TSTTXT BYTE 37
+       TEXT 'PRESS '
+       BYTE '1'+>80
+       TEXT ' FOR Nondestructive Quick Test'
+       BYTE 28
+       BYTE '2'+>80
+       TEXT ' FOR Destructive Quick Test'
+       BYTE 29
+       BYTE '3'+>80
+       TEXT ' FOR Comprehensive Disk Test'
+LLTXT  BYTE 27
+       TEXT 'Do you want to Loop Test? N'
+       BYTE 28
+       TEXT 'Do you want to Log Errors? N'
+INFTXT BYTE 18
+       TEXT 'I/O Error Code: 00'
+       BYTE 22
+       TEXT 'Current Test Number: 0'
+       BYTE 19
+       TEXT 'Completed Passes: 0'
+       BYTE 15
+       TEXT 'Total Errors: 0'
+       BYTE 15
+       TEXT 'Testing Sector:'
+ENDMSG BYTE 19
+       TEXT 'Disk Test Completed'
+PMSG1  BYTE 69
+       TEXT 'I/O Error #'
+IOENUM TEXT '00 Returned at Sector Number'
+SECN1  TEXT ' 0000 During Test '
+TSTNUM TEXT '0, Pass'
+PASNUM TEXT ' 0000'
+PMSG2  BYTE 45
+       TEXT 'Sector'
+SECN2  TEXT ' 0000 Marked as USED on Disk '
+DTVNAM TEXT '0123456789'
+DVERR6 BYTE 13
+       TEXT 'Device error '
+H35    BYTE >35
+H21    BYTE >21
+       EVEN
+*** CONVERT DATA ***
+BASE16 DATA 4096
+       DATA 256
+       DATA 16
+BASE10 DATA 10000
+       DATA 1000
+       DATA 100
+H000A  DATA 10
+H0A    EQU  $-1
+BINHEX DATA HIREG2,BH1
+BINDEC DATA HIREG2,BD1
+CONV32 DATA 0
+H3E    BYTE >3E
+H39    BYTE >39
+H41    BYTE >41
+H46    BYTE >46
+H37    BYTE >37
+       EVEN
+*** FORMAT DATA ***
+TRLLST DATA >8F8F,LEV1RT,>3438,TRKS
+       DATA >8B8B,GFNAME,>8A0D,GFTRCK,0
+HE5E5  DATA >E5E5
+NOTDSD DATA 0
+TRAKS2 DATA 0
+CURTBL DATA 0
+FSAV   DATA 0
+FORSAV DATA 0
+DENTBL DATA SD09TB,DD18TB,DD16TB
+SDLST  DATA >5373,GFDENS,>4464,GFDENS,>0D8C,GFDEF
+       DATA >8B00,GFUP,>8A00,GFDEF,>8F8F,LEV1RT,0
+SAVSD  DATA >0000
+SDADR  DATA 11*SCRWID+27,13*SCRWID+27
+SPTLST DATA >310D,SEL18,>3232,SEL16,>8F8F,LEV1RT,0
+FADDR  DATA 07*SCRWID+14,09*SCRWID+10,11*SCRWID+03
+       DATA 13*SCRWID+01,17*SCRWID+16
+SPTADR DATA 15*SCRWID+02,16*SCRWID+08
+DSDADR DATA 16*SCRWID+13,18*SCRWID+02,19*SCRWID+02
+SECTXT BYTE 21  *** HAS TO BE ON WORD BOUNDARY
+       TEXT 'Sectors per Track: '
+SPTMSG TEXT '  '
+HF4    BYTE >F4  *KEEP HERE FOR WORD BOUNDARY
+NEWNAM BYTE 0
+       TEXT '          '
+TOTAU2 DATA 0
+SECPTK BYTE 0
+FORMID TEXT 'DSK '
+TRAK   BYTE 0
+SIDE2  BYTE 0
+VIBDNS BYTE 0
+RDACMD BYTE >C0
+DVTRAK BYTE 0
+DFLT40 BYTE 2
+       TEXT '40'
+DFLT80 BYTE 2
+       TEXT '80'
+NUMTRK BYTE 2
+       TEXT '40'
+FTXT   BYTE 12
+       TEXT 'Volume Name?'
+       BYTE 16
+       TEXT 'How many Tracks?'
+       BYTE 25
+       TEXT 'Double or Single Sided? '
+FSIDE2 TEXT 'S'
+       BYTE 27
+       TEXT 'Double or Single Density? '
+FDENSE TEXT 'D'
+       BYTE 10
+       TEXT 'Interlace?'
+SPTMES BYTE 32
+       TEXT 'PRESS '
+       BYTE '1'+>80
+       TEXT ' FOR 18 Sectors per Track'
+       BYTE 26
+       BYTE '2'+>80
+       TEXT ' FOR 16 Sectors per Track'
+CTXT13 BYTE 29
+       TEXT 'BAD DISK - VOLUME UNREADABLE '
+ILASC  BYTE 2
+       TEXT '  '
+DSDMSG BYTE 11
+       BYTE '*'+>80
+       BYTE '*'+>80
+       BYTE 'W'+>80
+       BYTE 'A'+>80
+       BYTE 'R'+>80
+       BYTE 'N'+>80
+       BYTE 'I'+>80
+       BYTE 'N'+>80
+       BYTE 'G'+>80
+       BYTE '*'+>80
+       BYTE '*'+>80
+*
+       BYTE 35
+       TEXT 'Your disk should have '
+FSIZE1 TEXT '      sectors'
+       BYTE 20
+       TEXT 'It has '
+FSIZE2 TEXT '      sectors'
+CTRLST BYTE >8B,>8F
+HFE    BYTE >FE
+HF7    BYTE >F7
+H38    BYTE >38
+***
+*
+*   FORMATTING INFORMATION - TABLES ARE ARRANGED AS FOLLOWS:
+*
+*   BYTE 1 - NUMBER OF BYTES TO WRITE
+* IF ZERO THEN NEXT BYTE DETERMINES ACTION
+* >FF=ID FIELD   >00=END OF SECTOR
+*
+*   BYTE 2 - VALUE TO WRITE
+*
+***
+*
+DD16TB BYTE >02,>10,>31,>36
+DD18TB BYTE >02,>12,>31,>38
+SD09TB BYTE >01,>09,>20,>39
+*** PRTLNK DATA ***
+SCLEN  EQU  >8354
+SCNAME EQU  >8356
+CRULST EQU  >83D0
+SADDR  EQU  >83D2
+NAMBUF EQU  LEN$
+SWPDON DATA >0000
+HAA    BYTE >AA
+       EVEN
+*** 80TK DATA ***
+WS80   BSS  32
+       EVEN
+*** RAMDISK DATA ***
+RDSLST DATA >4363,RDSCH,>4464,SETDE,>458F,UTIL
+       DATA >3131,TOG128,0
+RAMCOM DATA RCTXT,CADDR2,1
+RDEADR DATA 17*SCRWID+00,19*SCRWID+00
+TKALL  DATA 0
+***
+*  DEFAULT SETTINGS FOR DIFFERENT RAMDISK MEMORY SIZES
+*  WORD 1 - TOTAL MEMORY AVAILABLE FOR RAMDISK/SPOOLER
+*  WORD 2 - DEFAULT RAMDISK SETTING
+*  WORD 3 - DEFAULT SPOOLER SETTING
+***
+RAMADR DATA 00*SCRWID+01,03*SCRWID+01,05*SCRWID+01,09*SCRWID+10
+       DATA 12*SCRWID+05,14*SCRWID+05,16*SCRWID+05,19*SCRWID+01
+RDVIB  TEXT 'RAMDISK   '
+TOTRD  DATA 0
+       BYTE >10
+       TEXT 'DSK '
+       BYTE >28,>02,>02,>01
+RCTXT  BYTE 34
+       BYTE 'C'+>80
+       TEXT 'hange    '
+       BYTE 'D'+>80
+       TEXT 'rive    '
+       BYTE '1'+>80
+       TEXT '28K-OS    '
+       BYTE 'E'+>80
+       TEXT 'xit'
+EMUN$  BYTE 1,>35
+RDALL$ BYTE 3
+       TEXT '   '
+PSALL$ BYTE 3
+       TEXT '   '
+RAMTXT BYTE 36
+TKALL$ TEXT '      K available to RAMDISK/SPOOLER'
+       BYTE 36
+       TEXT 'NOTE: Changing the RAMDISK PARTITION'
+       BYTE 38
+       TEXT 'will DESTROY any data presently on it.'
+       BYTE 26
+       TEXT 'Ramdisk Partition :      K'
+       BYTE 28
+       TEXT 'Ramdisk Set At     Kilobytes'
+       BYTE 28
+       TEXT 'Spooler Set At     Kilobytes'
+       BYTE 11
+       TEXT '128K-OS is '
+       BYTE 28
+       TEXT 'Now Emulating Drive Number :'
+RDETXT BYTE 36
+       TEXT 'If you wish to Reformat your Ramdisk'
+       BYTE 39
+       TEXT 'You must use the Utility/Ramdisk option'
+ON128  BYTE 3
+       TEXT 'ON '
+OFF128 BYTE 3
+       TEXT 'OFF'
+       EVEN

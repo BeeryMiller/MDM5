@@ -1,0 +1,388 @@
+***** MODULE NAME - SYSTESTS ***
+***
+*
+*  BL   @FDTEST - GIVES A CHOICE OF DESTRUCTIVE AND NONDESTRUCTIVE QUICK
+*  TESTS AND A DESTRUCTIVE COMPREHENSIVE TEST.  WHEN TEST IS PERFORMED ALL
+*  BAD SECTORS ARE MARKED IN BITMAP AS USED.
+*
+*** NO PARAMETERS, USES HIREG ***
+*
+***
+*
+FDTEST LI   R1,DNF2
+CLFLGS CLR  *R1+
+       CI   R1,COMPAS
+       JLE  CLFLGS
+       SETO @IGNFER
+       SETO @IGASUB
+       BLWP @GETDRV
+       DATA >0000             GET HARD OR FLOPPY
+TDF1   JNE  TDF               disk was formatted
+       BL   @VMBW
+       DATA ERLN#*SCRWID+00,ERR,8
+       BL   @SHOW$1
+       DATA ERR2,ERLN#*SCRWID+8
+TDF2   BL   @SHOW$1
+       DATA FORMQ,22*SCRWID+13
+       BL   @COMNB
+       DATA TQLST
+TFDSK  BL   @LINE1
+       MOV  @MAIND,R3
+       BL   @FORMAT
+       BL   @REDOMN
+TDF    CLR  @IGNFER
+       CLR  @IGASUB
+       BL   @CLMID
+       ABS  @HRDS             hard drive tst
+       JEQ  $+6               no floppy
+       B    @FW11+4           go do wds verify
+       BL   @SCRGEN
+       DATA LLTXT,LLADR,2
+LOOPQ  LI   R1,>010C
+       BL   @COMB
+       DATA LOPLST
+DOLOOP SETO @LOPFLG
+NOLOOP LI   R1,>015C
+       BL   @COMB
+       DATA LOGLST
+DOLOG  SETO @LOGFLG
+       LI   R0,>0191
+       LI   R1,OUTPUT
+       BLWP @INPUT
+       DATA 39,>2020
+       JNC  OPNLOG
+       CI   R0,>8F00
+       JEQ  $+18
+       CI   R0,>8B00
+       JNE  OPNLOG
+       BL   @VDPFIL
+       DATA >0190,40,>2000
+       JMP  LOOPQ
+       B    @UTIL             FPRT
+OPNLOG BL   @OPEN
+       DATA PRTPAB
+NOLOG  BL   @SCRGEN
+       DATA TSTTXT,TSTADR,3
+       BL   @COMNB
+       DATA TSTLST
+*
+DQTEST MOV  @MAIND,R3
+       BL   @FORMAT
+       BL   @CLTOP
+       BL   @REDOMN
+* MOVED THESE NEXT 2 LINES OUT OF THE LOOP AS THEY WERE RE-WRITTING THE
+* SETUP SCREEN ARE EACH COMPLETION
+       BL   @SCRGEN
+       DATA INFTXT,INFADR,5
+       BL   @UPDNUM
+       DATA 13*SCRWID+22,>3120
+DQST   BL   @FILBUF  *FILLS GENBUF W/WORD FOLLOWING CALL
+       DATA >FFFF
+       MOVB @HF7,@GENBUF+>80
+       BL   @GETAUS
+       BL   @VFYSEC
+       LI   R14,DQST
+       B    @TSTND2
+*
+NQTEST
+NQOK   BL   @VDPFIL
+       DATA >00A0,16*40,>2020
+       BL   @SCRGEN
+       DATA INFTXT,INFADR,5
+       BL   @UPDNUM
+       DATA 13*SCRWID+22,>3120
+NQST   BL   @GETAUS
+       SETO @NQFLAG
+       LI   R15,NQLNK
+       CLR  R6
+* NQLP   BLWP @CKF4
+*      DATA TSTND3
+NQLP   MOV  R6,R0
+       BL   @DISPSN
+       BLWP @RSCPU
+       DATA LOGERR
+NQLNK  INC  R6
+       C    R6,R7
+       JL   NQLP
+       LI   R14,NQST
+       B    @TSTND3
+*
+DCTEST MOV  @MAIND,R3
+       BL   @FORMAT
+       BL   @CLTOP
+       BL   @SCRGEN
+       DATA INFTXT,INFADR,5
+DCST   BL   @REDOMN
+       BL   @GETAUS
+*** TEST 1
+       BL   @UPDNUM
+       DATA 13*SCRWID+22,>3120
+       BL   @FILBUF
+       DATA >6E6E
+       BL   @VFYSEC
+*** TEST 2
+       BL   @UPDNUM
+       DATA 13*SCRWID+22,>3220
+       BL   @FILBUF
+       DATA >C5C5
+       BL   @VFYSEC
+*** TEST 3
+       BL   @UPDNUM
+       DATA 13*SCRWID+22,>3320
+       BL   @FILBUF
+       DATA >0000
+       MOVB @H08,@GENBUF+>80
+       BL   @VFYSEC
+*** TEST 4
+       BL   @UPDNUM
+       DATA 13*SCRWID+22,>3420
+       BL   @FILBUF
+       DATA >FFFF
+       MOVB @HF7,@GENBUF+>80
+       LI   R6,1
+* DCLP   BLWP @CKF4
+*      DATA TSTND2
+DCLP   MOV  R6,@GENBUF
+       MOV  R6,R0
+       BL   @DISPSN
+       LI   R15,DCLNK
+       BLWP @WSCPU
+       DATA LOGERR
+DCLNK  INC  R6
+       C    R6,R7
+       JL   DCLP
+*** TEST 5
+       BL   @UPDNUM
+       DATA 13*SCRWID+22,>3520
+       LI   R6,1
+DCLNK5 DEC  R7
+       JEQ  DCEND
+       LI   R15,DCLNK2
+       MOV  R6,R0
+       BL   @DISPSN
+       BLWP @RSCPU
+       DATA LOGERR
+DCLNK2 LI   R15,DCLNK3
+       C    R0,@GENBUF
+       JNE  LOGERR
+DCLNK3 INC  R6
+       MOV  R7,R0
+       BL   @DISPSN
+       LI   R15,DCLNK5
+       BLWP @RSCPU
+       DATA LOGERR
+       MOVB @H21,@>8350
+       C    R0,@GENBUF
+       JNE  LOGERR
+*      BLWP @CKF4
+*      DATA TSTND2
+       JMP  DCLNK5
+DCEND  LI   R14,DCST
+TSTND2 LI   R15,TSTND3
+       CLR  R0
+       LI   R1,CPYVOL
+       BLWP @WSCPU
+       DATA LOGERR
+       BL   @FILBUF
+       DATA >0000
+       INC  R0
+       LI   R1,GENBUF
+       BLWP @WSCPU
+       DATA LOGERR
+TSTND3 INC  @COMPAS
+       MOV  @COMPAS,R0
+       LI   R2,CS1BUF+1
+       BL   @CNVNM
+       BL   @SHOW$2
+       DATA 15*SCRWID+22
+       MOV  @LOPFLG,R1
+       JEQ  $+4
+       B    *R14
+       BL   @SHOW$1
+       DATA ENDMSG,3*SCRWID+01
+       BL   @CLOSE
+       DATA PRTPAB
+       BL   @CONABO
+       B    @UTIL
+*
+DISPSN MOV  R11,12
+       LI   R1,CS1BUF
+       BLWP @BINDEC
+       BL   @VMBW
+       DATA 20*SCRWID+22,CS1BUF,5
+       LI   R1,GENBUF
+       B    *R12
+*
+*
+*AN ERROR HAS OCCURRED SO INC THE COUNTER AND DISPLAY THE TOTAL
+LOGERR INC  @TOTERR
+       MOV  @TOTERR,R0
+       LI   R2,CS1BUF+1
+       BL   @CNVNM
+       BL   @SHOW$2
+       DATA 17*SCRWID+22
+*GET THE ERROR CODE
+       MOVB @>8350,R0
+       SRL  R0,8
+       LI   R2,CS1BUF+1  *GET A HANDY BUFFER
+       BL   @CNVNMH
+       BL   @SHOW$2      *DISPLAY ERROR CODE
+       DATA 11*SCRWID+22
+       MOV  @LOGFLG,R13  *SEE IF ERROR IS TO BE LOGGED
+       JEQ  NOLOG2
+       MOVB @CS1BUF+1,@IOENUM
+       MOVB @CS1BUF+2,@IOENUM+1
+       MOV  R6,R0
+       LI   R1,SECN1
+       BLWP @BINDEC
+       MOV  @COMPAS,R0
+       INC  R0
+       LI   R1,PASNUM
+       BLWP @BINDEC
+       BL   @PRINT
+       DATA PMSG1
+*IF IT'S TEST 5 THEN DON'T MARK THE SEC.
+*AS BAD - IT IS PROBABLY A DRIVE ERROR
+NOLOG2 CB   @TSTNUM,@H35
+       JEQ  LOGRT
+*IF IT'S A NON-DESTRUCTIVE TEST THEN DON'T MARK THE SEC.
+       MOV  @NQFLAG,R2
+       JNE  NOMARK
+*MARK THE SECTOR AS BAD
+       MOV  R6,R2
+       BL   @GETA
+*SEE IF LOGGING IS ON AND IF SO, PRINT THE ERROR INFO
+NOMARK MOV  R13,R13
+       JEQ  LOGRT
+       MOV  R6,R0
+       LI   R1,SECN2
+       BLWP @BINDEC
+       LI   R1,DTVNAM
+       LI   R2,CPYVOL
+DTVNLP MOVB *R2+,*R1+
+       CI   R2,CPYVOL+10
+       JL   DTVNLP
+       BL   @PRINT
+       DATA PMSG2
+LOGRT  LI   R1,GENBUF
+       B    *R15
+*
+VFYSEC MOV  R11,@SAVRT6
+NOBK1  LI   R6,1
+VFYLP2 MOV  R6,R0
+       BL   @DISPSN
+       LI   R1,GENBUF
+       LI   R15,VFYLNK
+       BLWP @WSCPU
+       DATA LOGERR   *UPDATES SCREEN, OUTPUTS TO DEVICE, MARKS SECTOR IN BITMAP
+*      BLWP @CKF4
+*      DATA TSTND2
+VFYLNK INC  R6
+       C    R6,R7
+       JL   VFYLP2
+       MOV  @SAVRT6,R11
+       B    *R11
+*
+* Read a record
+READ   MOV  *R11+,@EOFLNK
+       MOV  R11,@SAVRT4       Save return address
+       LI   R1,PABLOC         Start of PAB
+       LI   R0,>0200          Input opcode
+       BL   @VSBW
+       JMP  PABST3
+PRINTV MOV  *R11+,@BUFLOC
+       MOV  *R11+,@BUFLEN
+       MOV  R11,@SAVRT4
+       LI   R0,>0300
+       LI   R1,LEV1RT
+       JMP  PABST2
+OPEN   CLR  R0
+       LI   R1,DUMBUF
+       SETO @ODOPEN
+       CLR  @CLOSIN
+       JMP  SETPB3
+CLOSE  MOV  @ODOPEN,R1
+       JEQ  NOTOPN
+       LI   R1,DUMBUF
+       LI   R0,>0100
+       CLR  @ODOPEN
+       SETO @CLOSIN
+       INCT R11
+       JMP  SETPB2
+SETPB3 MOV  *R11+,@PABNAM
+       JMP  SETPB2
+PRINT  LI   R0,>0300
+H03    EQU  $-2
+       MOV  *R11+,R1
+SETPB2 MOV  R11,@SAVRT4
+       MOVB *R1,@BUFLEN
+       BL   @SHOW$2
+       DATA PRTBUF
+       LI   R1,>0500
+       MOV  R1,@BUFLOC
+       LI   R1,LEV1RT
+PABST2 MOV  R1,@EOFLNK
+       MOV  @PABNAM,R2
+       INC  R2
+       MOVB R0,*R2
+       BL   @SHOW$1
+PABNAM DATA PRTPAB,PABLOC
+PABST3 MOV  @PRTPNT,@>8356
+       BLWP @PRTLNK
+       DATA 8
+       JNE  NODERR
+       MOV  @CLOSIN,R2
+       JNE  NODERR
+       MOV  R0,R7
+       JNE  NOBDN
+       CLR  @ODOPEN
+NOBDN  CI   R7,5
+       JNE  $+8
+       CLR  @ODOPEN
+       B    @LEV1RT
+EOFLNK EQU  $-2
+       SLA  R7,1              NOTEOF
+       ABS  @SEEOP            GET HERE FROM SEE OPERATION
+       JNE  $+8               YES SCROLL
+       BL   @CLRCOM
+       JMP  $+14
+       BL   @SCROLL           MOVE UP LAST GOOD LINE
+       BL   @SCROLL
+       BL   @SCROLL
+       CLR  @SEEOP
+       BL   @LINE1            DRAW LINE
+       BL   @VMBW
+       DATA ERLN#*SCRWID+0,ERR,8
+       MOV  @IOELST(R7),R1
+       BL   @SHOW$2
+       DATA ERLN#*SCRWID+08
+       BLWP @HONK
+       BL   @CONAB1
+PRTBRK B    @LEV1RT
+NODERR MOV  @SAVRT4,R11
+       B    *R11
+NOTOPN INCT R11
+       B    *R11
+*
+*
+* Fill GENBUF
+*  In: DATA fill-data (word)
+*  Reg: R1, R2
+FILBUF MOV  *R11+,R1
+       LI   R2,GENBUF
+FILBLP MOV  R1,*R2+
+       CI   R2,GENBUF+256
+       JL   FILBLP
+       B    *R11
+*
+* Get number of AUs
+*  Stores sector 0 in CPYVOL
+*  Out: R7=number
+GETAUS CLR  R0
+       LI   R1,CPYVOL
+       BLWP @RSCPU
+       DATA GETAUS
+       MOV  @TOTSEC(R1),R7
+       B    *R11
+       MOV  @TOTSEC(R1),R7
+       B    *R11

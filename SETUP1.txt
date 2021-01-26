@@ -1,0 +1,645 @@
+*** MODULE NAME - SETUP ***
+       EVEN
+****** ROUTINE TO DO INITIAL SETUP ******
+*
+GO     LIMI 0
+       LWPI GPLWS
+       MOVB @HBA,@SV8002      set up initial swap page
+*  decide if 99/4a or 9640
+       CLR  @C9640            assume tis 994a
+       MOV  @0,R0
+       INV  @0                change it
+       C    @0,R0             the same?
+       JEQ  TIS4A             yup - must be a 994a (or a weird geneve...)
+       SETO @C9640            9640 (or a weird 994a...)
+       MOV  R0,@0             restore (good idea, huh?)
+*
+*  set up addressing for 9640 utility menu
+       LI   R0,COMTAB+48
+       LI   R1,CTXT9A
+       MOV  R1,*R0+
+       LI   R1,CADR9A
+       MOV  R1,*R0
+TIS4A  SETO @KEYCAS           Uppercase only
+       MOVB @H00,@PATHS
+       MOVB @H00,@PATHD
+       SZC  @>0032,R14   *SET FLAG USED IN CONSOLE
+*** DON'T TOUCH ***
+*      LI   R1,>CFBE     *REDIRECT THE DAMN GPL POINTERS
+*      MOV  @>8372,@SAVGSP
+*      MOV  R1,@>8372    *PUTS SUBROUTINE STACK AT >83C0
+       LWPI SECWS
+       BL   @LDVREG
+       LWPI GETDWS
+       BL   @LDVREG
+       LWPI MIDREG
+       BL   @LDVREG
+       LWPI VDPREG
+       BL   @LDVREG
+       LWPI HIREG
+       BL   @LDVREG
+*   call files(2)
+       BL   @VMBW
+       DATA PABSUB,PAB16,2
+       MOV  @PAB10L,@>8356
+       MOVB @H02,@>834C
+       BLWP @PRTLNK
+       DATA >A
+*   done with call files(2)
+       BL   @SETCOL           set up the screen colors
+       SETO R1
+       MOVB R1,@>83C2    *TURN OFF ALL EXCEPT USER INTERRUPT ROUTINE
+       LI   R1,INTRTN
+       MOV  R1,@>83C4    *SET UP USER INTERRUPT ROUTINE ADDRESS
+       CLR  @BDUSED
+       CLR  @WDPRES
+*      BL   @SWPDSR           swap dsr page
+*   seek out new life and new civilizations....
+*   whoops, sorry, seek out HFDC, floppy, and myarc rd
+       LI   R12,>1000         1st time start at beginning
+PERSON BL   @SDSR+4           this way if personality card found we can continue
+       BYTE 4
+       TEXT 'WDS1'
+       EVEN
+       MOV  R2,R2             TEST IF PESONALITY CARD (NO INIT VECTOR)
+       JNE  $+8               no hfdc
+       AI   R12,>0100         skip
+       JMP  PERSON            now find hfdc
+       MOV  R12,@WDPRES       save Hfdc CRU
+       JNE  $+6               if found OK
+       BLWP @>0000            else exit
+* GOT THE HFDC CRUBASE NOW GET IS VERSION #
+       SRL  R0,8              GET ONLY THE VERSION #
+       LI   R2,TEMP+1         CONVERT # TO ASCII
+       BL   @CNVNM            CONVERT IT
+       MOVB @TEMP,R2          GET LENGTH
+       SRL  R2,8              MAKE A COUNT
+       LI   R0,TEMP+1         MOVE UP TO 3 BYTES TO EPROM DISPLAY
+       LI   R1,EPROM+8
+EPMLP  MOVB *R0+,*R1+
+       DEC  R2
+       JNE  EPMLP
+       LI   R12,>1100         FLOPPY DC
+       MOV  R12,@DCPRES
+       C    R12,@WDPRES       IS WDS=TO FLOPPY CRU
+       JEQ  $+12              no - must be run by hfdc
+       BL   @FILL             clear all default interlaces to 0
+       DATA DEFIL,6,0
+       BL   @SDSR
+       BYTE 2
+       TEXT 'RD'
+       EVEN
+       MOV  R12,@RDPRES
+*GET DC ID FOR LATER USE
+*  set version to >00 if ti or corcomp controllers
+       MOV  @DCPRES,R12
+       SBO  0
+       MOV  @>4000,@DC4000    get version
+       C    R12,@WDPRES       same as HFDC?
+       JEQ  HDFLWI
+       SBZ  3
+       MOV  @>4000,@DC4000
+       MOV  @>5200,R0
+       INV  @>5200
+       C    @>5200,R0         same?
+       JEQ  $+8               ti or corcomp... don't care which one
+       MOV  R0,@>5200         restore
+       JMP  $+8               turn it off
+       MOVB @H00,@DC4000+1    set version to >00
+HDFLWI SBZ  0
+*
+* NOW THAT WE HAVE THE CRU BASE FOR HFDC AND FLOPPY WE NEED TO BUILD
+* TABLE OF WHICH ONES ARE 80 TRACK DRIVES AND GET THE REST OF THE
+* INFO LIKE STEP RATE AND HIGH DENSITY FOR HFDC
+*
+       LI   R1,HFDRV          TABLE OF HFDC DRIVE ORDER
+       LI   R2,LODRVS         SET TO LOW 4 DRIVES
+       MOV  @WDPRES,R12       HFDC CRU BASE
+       LI   R3,4              4 DRIVES TO DO
+       C    R12,@DCPRES       IS THERE ONLY A HFDC ?
+       JEQ  $+4               SO HFDC DRIVES ARE 1-4
+       A    R3,R2             IF HFDC CRU BASE NOT >1100 THEN ITS DRIVES ARE 5-8
+       SBO  4                 SET TO READ THE SWITCHES
+       STCR R0,8              READ IN ALL 8 SWITCHES
+       SBZ  4                 RESET REQUEST
+SETFLH MOVB *R1+,R5           GET A DRIVE #
+       SRL  R5,8
+       A    R2,R5             POINT TO TRACKS TABLE THIS DRIVE
+       LI   R6,>2800          SET FOR A 40 TRACK DRIVE
+       SLA  R0,1              SWITCH ON
+       JNC  SETFL1            NO
+       LI   R7,>0500
+       SLA  R0,1
+       JOC  SETFL2
+       LI   R7,>0200
+       LI   R6,>5000          SET FOR 80 TRACKS
+SETFL2 MOVB R6,*R5            SAVE TRACKS
+       DEC  R3                DONE ALL 4 DRIVES
+       JNE  SETFLH            NO
+       JMP  DOOTH             DO OTHER FLOPPY CONTROLLER
+SETFL1 LI   R7,>0400
+       SLA  R0,1
+       JOC  SETFL2
+       LI   R7,>03FF
+       JMP  SETFL2-4
+DOOTH  C    R12,@DCPRES       IS THERE A FLOPPY CONTROLLER TOO
+       JEQ  NOFLPY            NO
+       MOV  @DCPRES,R12       NOW DO ITS DRIVES 1-4
+       CB   @DCID,@H03        IF DSR VERSION <3 THEN ONLY 40 TRACKS POSSIBLE
+       JL   NOFLPY            LEAVE TABLE WITH DEFAULTS
+       LI   R5,>5000          50 TRACK DRIVE VALUE
+       CLR  R3                START OF DRIVES BASE 0
+       LI   R1,4              4 DRIVES TO DO
+DOOTH1 LI   R4,>1F07          TB 8
+       S    R3,R4             MINUS DRIVE #
+       X    R4                READ BIT
+       JEQ  $+6               NOT 80 TRACK DRIVE
+       MOVB R5,@LODRVS(R3)    SET TO 80 TRACKS
+       INC  R3
+       DEC  R1                DONE ALL FOUR
+       JNE  DOOTH1            NO
+*
+*SEE IF THERE IS A RAMDISK
+NOFLPY MOV  @RDPRES,R12
+       JEQ  SETND2
+*THERE IS A RAMDISK
+*GET THE TOTAL RAM AVAILABLE
+       BL   @RDGET
+       DATA >2002
+       MOV  R0,@TKALL
+*
+*SEE IF RAMDISK IS ALREADY SET UP
+*IF IT IS THEN LEAVE IT ALONE
+       BL   @RDGET
+       DATA >2000
+       CI   R0,>A55A
+       JNE  $+6
+       B    @RDSET2
+*
+*RAMDISK IS NOT SET UP YET
+*IF 128K-OS IS ACTIVATED THEN MAKE THE MANAGER THINK
+*THAT THERE IS 96K LESS RAM AVAILABLE THAN THERE IS
+       MOV  @OS128K,R1
+       JEQ  $+8
+       S    @H0060,@TKALL
+       MOV  @RDALL,R1
+       A    @PSALL,R1
+       C    R1,@TKALL
+       JEQ  DEFSET
+       LI   R2,DEFRD
+       MOV  @TKALL,R0
+SETRLP C    R0,*R2+
+       JEQ  SETRDD
+       C    *R2+,*R2+
+       CI   R2,DEFTND
+       JL   SETRLP
+*IF NOT IN TABLE, JUST MAKE HALF RD AND HALF PS
+       MOV  @TKALL,R2
+       SRL  R2,1
+       MOV  R2,@RDALL
+       MOV  R2,@PSALL
+       JMP  DEFSET
+SETRDD MOV  *R2+,@RDALL
+       MOV  *R2+,@PSALL
+DEFSET BL   @RSETUP
+       MOV  @EMUNUM,R0
+       CI   R0,5
+       JLE  $+10
+       LI   R0,5
+       MOV  R0,@EMUNUM
+       BL   @SETEMU
+* set clock if needed.
+* if 9640, load 9640 clock into HFDC and execute
+SETND2 MOV  @WDPRES,R12
+       SBO  0                 turn it on
+       ABS  @C9640            4a or 9640?
+       JEQ  SCLK1             4a
+       LI   R2,>FFFD
+FIXTM  INC  R2
+       JEQ  SCLK1
+       LI   R1,TEMP
+       MOV  R1,R0
+       LI   R4,6
+       MOVB @>8010,R3
+       LI   R3,>8013
+SCLK0  MOVB *R3,*R1+
+       DEC  R3
+       MOVB *R3,*R1+
+       AI   R3,3
+       DEC  R4
+       JNE  SCLK0
+       MOVB @>8010,R3         TEST FOR RIPPLE
+       SLA  R3,5
+       JOC  FIXTM
+* TEST CLOCK VALIDITY
+FIXTM1 MOVB *R0+,R7
+       ANDI R7,>0F00
+       CI   R7,>0900          OVER MAX
+       JH   SCLK1             YES GO 4A CLOCK SET
+       CI   R0,TEMP+12        ALL TESTED
+       JNE  FIXTM1            NO
+* NOW MOVE CLOCK TO 4A
+       MOVB @HFFFF,@>4FE0
+       CLR  @>4FFE
+       MOVB @H05,@>4FE0
+       MOVB @H01,@>4FFE
+       LI   R3,TEMP
+       LI   R7,>4FE6          START WITH TENS OF SEC.
+       LI   R4,6
+LOOPDT MOVB *R3+,*R7
+       DECT R7
+       MOVB *R3+,*R7          NOW UNITS
+       AI   R7,6
+       DEC  R4
+       JNE  LOOPDT
+       MOVB @TEMP+11,R5       TEST FOR LEAP YEAR
+       MOVB @TEMP+10,R4
+       SRL  R4,9
+       JNC  $+6
+       XOR  @H02,R5
+       SLA  R5,2
+       ANDI R5,>0C00
+       ORI  R5,>0100
+       MOVB R5,@>4FFE
+       MOVB @H01,@>4FE0       start clock
+       B    @SCLK5            all done
+*
+SCLK1  LWPI HIREG             in case f5 comes here
+       LI   R0,7
+       LI   R1,SCLKA
+       LI   R2,TEMP
+       LI   R5,SCLKST+9
+       LI   R3,SCLK1          new abort for f5 key
+       MOV  R3,@KABORT+2
+SCLK1A LI   R3,2
+       MOVB @H02,*R2+
+SCLK1B MOV  *R1+,R4           get address of clock byte
+       MOVB *R4,R4            get actual value in clock byte
+       ANDI R4,>0F00          mask out hi nibble
+       CI   R4,>0900          is it a numeric digit?
+       JLE  $+4               yes
+       CLR  R4                clear to 0, then
+       AI   R4,>3000          to ascii
+       MOVB R4,*R2+
+       MOVB R4,*R5+           into text position
+       DEC  R3
+       JNE  SCLK1B
+       AI   R5,9              next line
+       DEC  R0
+       JNE  SCLK1A
+* NOW TEST RANGE
+       LI   R1,CLKVR          VALID RANGES  24 HOUR CLOCK 23:59:59 12/31/99
+       LI   R2,TEMP+1         SET AGAINST WHAT WE HAVE
+       LI   R3,7              7 FIELDS
+SCLK1E MOVB *R2+,R0           GET TENS BYTE
+       SWPB R0
+       MOVB *R2+,R0           GET UNITS BYTE
+       SWPB R0
+       INC  R2           SKIP COUNT
+       C    R0,*R1+      TEST RANGE
+       JLE  $+6          OK
+       B    @CLKRST      ANY INVALID RESETS ALL RESET CLOCK
+       DEC  R3           ALL TESTED
+       JNE  SCLK1E       NO
+*
+* NOW CORRECT TO 12 HOUR CLOCK
+CLKRT1 LI   R1,'AM'
+       MOV  R1,@SCLKST+42
+       MOVB @SCLKST+10,R1     GET LOW DIGIT HOUR
+       SRL  R1,8
+       MOVB @SCLKST+9,R1      GET HIGH HOUR
+       LI   R6,'AP'
+       CI   R1,>3132          IS HOUR >12
+       JEQ  CLKRT2-2          NO ITS NOON LEAVE AS 12 BUT SET PM
+       JLE  CLKRT2            IS IT BEFORE NOON SO EVERYTHING IS OK
+       CI   R1,>3230          IS IT 8 PM
+       JNE  $+6               NO
+       LI   R1,>313A          MAKE IT FLOW THROUGH
+       CI   R1,>3231          IS IT 9 PM
+       JNE  $+6               NO THEN IT WILL FLOW OK
+       LI   R1,>313B
+       S    @PMCOR,R1         CORRECT TIME TO 12 HOUR CLOCK
+       SWPB R6                SET PM
+CLKRT2 MOVB R6,@SCLKST+42     SET AM OR PM
+       MOVB R6,@TEMP+10
+       MOVB R1,@SCLKST+9       LOAD CORRECT HIGH HOUR
+       MOVB R1,@TEMP+1
+       SWPB R1
+       MOVB R1,@SCLKST+10     CORRECT LOW HOUR
+       MOVB R1,@TEMP+2
+       MOVB @H01,@>4FE0  START CLOCK BACKUP
+       BL   @CLRCOM           clear command line
+       BL   @CLTOP
+       BL   @SCRGEN
+       DATA TTXT1,TADDR1,6
+       BL   @SHOW$1
+       DATA SETMSG,11*SCRWID+12
+       BL   @SCRGEN
+       DATA SCLKST,SCLKSA,7
+* ADD CONTINUE SET PROMPT
+       BL   @SHOW$1
+       DATA SETLT,22*SCRWID+15
+       BL   @COMNB
+       DATA SETLL
+SCLK1D BL   @CLRCOM
+       LI   R4,13*SCRWID+21
+       LI   R5,TEMP
+       LI   R6,SCLKR
+       LI   R7,7              7 FIELDS
+SCLK2  MOV  R4,R0
+       MOV  R5,R1
+       CI   R1,TEMP+9         ON AM/PM
+       JNE  SCLK2D            NO
+       LWPI MIDREG
+       LI   R1,16*SCRWID+21    SCREEN LOCATION FOR A/P
+       MOVB @TEMP+10,R0
+       BL   @VSBW
+       BL   @COMB             GET IT
+       DATA APSET
+SCLK2D BLWP @INPUT
+       DATA 2,'. '
+       JNC  SCLK2B
+       CI   R0,>8F00          f9?
+       JNE  $+6               NO
+       B    @SCLK5            YES
+       CI   R0,>8B00          up arrow?
+       JNE  SCLK2J            no
+CLKUP1 CI   R7,7              already at top?
+       JEQ  SCLK2J            yes - hard to up much more <sheez>
+       AI   R4,-SCRWID
+       AI   R5,-3
+       AI   R6,-4
+       INC  R7
+SCLK2J B    @SCLK2
+SCLK2B CB   @H02,*R1          length of 2?
+       JEQ  SCLK2A
+       MOVB @H02,*R1
+       MOVB @1(R1),@2(R1)
+       MOVB @H30,@1(R1)
+       MOV  R1,R13            DISPLAY DIGITS
+       MOV  R4,R1             DISPLAY LOCATION
+       MOVB @1(R13),R0
+       BL   @VSBW
+       INC  R1
+       MOVB @2(R13),R0
+       BL   @VSBW
+       MOV  R13,R1
+SCLK2A MOVB @1(R1),R2
+       SRL  R2,8
+       AI   R2,->30           ascii offset off
+       CI   R2,9
+       JH   SCLK2
+       MPY  @H000A,R2
+       MOVB @2(R1),R2
+       SRL  R2,8
+       AI   R2,->30           ascii offset off
+       CI   R2,9
+       JH   SCLK2
+       A    R2,R3
+       C    R3,*R6            too low a value?
+       JL   SCLK2             yes
+       C    R3,@2(R6)         too high?
+       JH   SCLK2             yes
+SCLK2C AI   R4,SCRWID
+       AI   R5,3
+       C    *R6+,*R6+         plus 4
+       DEC  R7
+       JNE  SCLK2
+* MAKE TIME BACK TO 24 HOUR
+       MOVB @TEMP+10,R1       GET A/P
+       ANDI R1,>5F00
+       CI   R1,>4100          IS IT AM
+       JEQ  SCLKOK            YES
+       MOVB @TEMP+2,R1        SET HOURS TO HOURS+12
+       SRL  R1,8
+       MOVB @TEMP+1,R1
+       CI   R1,>3132          IS IT 12 PM
+       JEQ  SCLKOK            IF SO THEN DON'T CORRECT
+       CI   R1,>3038          IS IT 8 PM
+       JNE  $+6               NO
+       LI   R1,>312E          CORRECT SO FLOW WILL GIVE >3230
+       CI   R1,>3039          IS IT 9 PM
+       JNE  $+6               NO ALL OTHERS FLOW OK
+       LI   R1,>312F          CORRECT SO FLOW WILL GIVE >3231
+       A    @PMCOR,R1
+       MOVB R1,@TEMP+1        CORRECTED HIGH HOUR
+       SWPB R1
+       MOVB R1,@TEMP+2        CORRECTED LOW HOUR
+SCLKOK LI   R1,TEMP
+       LI   R0,7
+       LI   R2,SCLKA          clock addresses
+       MOVB @HFFFF,@>4FE0     *
+       CLR  @>4FFE            *
+       MOVB @H05,@>4FE0
+       MOVB @H01,@>4FFE       *
+SCLK3  LI   R5,2
+       INC  R1                past length byte
+SCLK4  MOVB *R1+,R3
+       CI   R0,4              ON AM/PM
+       JEQ  $+18              YES SKIP TESTS
+       CB   R3,@H30
+       JL   SCLK2J
+       CB   R3,@H39
+       JH   SCLK2J
+       AI   R3,->3000         to hex
+       MOV  *R2+,R4
+       MOVB R3,*R4
+       DEC  R5
+       JNE  SCLK4
+       DEC  R0
+       JNE  SCLK3
+       MOVB @H01,@>4FE0       START THE CLOCK
+SCLK5  LI   R0,LEV0RT         new abort for f5 key
+       MOV  R0,@KABORT+2
+*  done with clock setting
+************************************
+* THE KEYBOARD INPUT ROUTINE KILLS R12 ON A 4A SO IT MUST BE
+* RESET BEFORE TURNING IT OFF OTHERWISE THE WHOLE THING LOCKS
+* WHEN YOU TRY TO ACCESS THE DISK. VERY STRANGE VALUES WILL SHOW UP
+* WHEN YOU DO A PRTLNK(DSRLNK). THIS WAS A REAL ##%# TO FIND
+* BUT NOW 4A MODE WILL WORK
+***********************************
+*
+       MOV  @WDPRES,R12
+       SBZ  0                 turn it off!
+*      BL   @SWPDSR           swap correct dsr page back in
+* NOW  SEE IF THERE IS AN EMULATION DRIVE  ONLY IF CRU OF HFDC = >1100
+       C    @DCPRES,@WDPRES   SAME CRU BASE FOR HFDC & DC
+       JNE  EMINIT            NO
+       LI   R0,>81FF          SET TO READ DR 1 TO CPU
+       MOV  R0,@>834C
+       LI   R1,TEMP           CPU BUFFER
+       MOV  R1,@>834E
+       CLR  @>8350
+       CLR  @>8352
+       BL   @VMBW
+       DATA PABSUB
+       DATA PAB20,2
+       MOV  @PAB10L,@>8356
+       BLWP @PRTLNK
+       DATA 10
+       MOVB @>8350,R0         ANY ERROR ON I/O
+       JNE  EMINIT            YES LEAVE EMULATE AS IS
+       MOV  @TEMP+>1A,@EMUFDR SET ANY EMULATION DRIVE
+EMINIT B    @LEV0RT           start main program
+RDSET2 BL   @RDGET
+       DATA >2004
+       MOV  R0,@RDALL
+       MOV  R0,R13
+       SLA  R13,2
+       BL   @RDGET
+       DATA >2006
+       MOV  R0,@PSALL
+       JNE  NALLSP
+       DEC  R13
+NALLSP MOV  R13,@TOTRD
+*SEE IF THE 128K-OS HAS BEEN SET UP
+*IF NOT THEN GO ON AS USUAL
+       MOV  @RDALL,R0
+       A    @PSALL,R0
+       C    R0,@TKALL
+       JEQ  $+12
+*TOTAL RAMDISK AND SPOOLER SPACE DO NOT
+*MATCH THE TOTAL K AVAILABLE, SO ASSUME
+*THAT 128K-OS HAS BEEN SET UP
+*SET THE OS128K FLAG AND ADJUST TKALL
+       SETO @OS128K
+       S    @H0060,@TKALL
+       BL   @RDGET
+       DATA >204A
+       SWPB R0
+       SRL  R0,8
+       MOV  R0,@EMUNUM
+       B    @SETND2
+*
+LDVREG LI   R8,VDPWD
+       LI   R9,VDPRD
+       LI   R10,VDPWA
+       B    *R11
+*
+SDSR   LI   R12,>1000         start search
+       C    R12,@WDPRES       same as hard controller?
+       JEQ  SD05              yes - don't search
+       SBO  0                 turn the sucker on
+       CB   @>4000,@HAA       anything there?
+       JNE  SD05-2            nope
+       LI   R0,>4008
+       MOV  *R0,R0            point to file i/o devices
+SD02   MOV  R0,R2             save
+       INCT R0
+       MOV  *R0+,R1           get start address
+       MOV  R11,R3            point to start
+       CB   *R3,*R0+          lengths the same?
+       JNE  SD04              no
+       MOVB *R3+,R4           get length
+       SRL  R4,8              to lsby
+SD03   CB   *R0+,*R3+
+       JNE  SD04              not equal
+       DEC  R4
+       JNE  SD03
+       MOVB @>4001,R0         SAVE VERSION #
+       MOV  @>400A,R2         SAVE INIT VECTOR FOR PERSONALITY CARD TEST
+       SBZ  0                 found it - turn card off
+       JMP  SD06              and return
+SD04   MOV  *R2,R0            get next link
+       JNE  SD02              still more to search
+       SBZ  0                 turn the card off
+SD05   AI   R12,>0100         point to next card
+       CI   R12,>2000         at end of search?
+       JNE  SDSR+4            nope - keep looking
+       CLR  R12               indicate not found
+*    return
+SD06   MOVB *R11+,R1
+       SRL  R1,8
+       A    R1,R11            past name
+       INC  R11
+       ANDI R11,>FFFE         mask out low bit
+       RT                     and return
+*
+CLKRST LI   R3,>3030          ZEROS FOR CLOCK VALUES
+       LI   R2,TEMP
+       LI   R5,SCLKST+9
+       LI   R7,7              7 FIELDS TO CLEAR
+CLKST1 LI   R4,2
+       MOVB @H02,*R2+         LENGTH OF 2 TO TEMP
+CLKST2 MOVB R3,*R2+           '0' FOR TEMP
+       MOVB R3,*R5+           '0' FOR DISPLAY
+       DEC  R4
+       JNE  CLKST2            DONE 2 ZEROS
+       AI   R5,9              NEXT DISPLAY FIELD
+       DEC  R7                DONE 7
+       JNE  CLKST1
+       LI   R3,'AM'           SET AM/PM TO AM
+       MOV  R3,@SCLKST+42     set display
+       MOVB R3,@TEMP+10       AND TEMP
+       B    @CLKRT1           NOW SHOW IT
+***
+AM     LI   R0,'A '           AM
+       JMP  $+6
+PM     LI   R0,'P '           PM
+       MOVB R0,@TEMP+10       SAVE IT
+       LWPI HIREG             RESTORE REGISTERS
+       B    @SCLK2C
+CLKUP  LWPI HIREG
+       B    @CLKUP1
+CLKDN  LWPI HIREG
+       B    @SCLK2C
+*
+SCLKA  DATA >4FEE,>4FEC,>4FEA,>4FE8,>4FE6,>4FE4
+       DATA >FF00,>FF00  * GET AND DUMP A/M WHERE IT WON'T HURT
+       DATA >4FF6,>4FF4,>4FF2,>4FF0,>4FFA,>4FF8
+SCLKST BYTE 10
+       TEXT '  Hour:   '
+       BYTE 10
+       TEXT 'Minute:   '
+       BYTE 10
+       TEXT 'Second:   '
+       BYTE 10
+       TEXT ' AM/PM: AM'
+       BYTE 10
+       TEXT ' Month:   '
+       BYTE 10
+       TEXT '  Date:   '
+       BYTE 10
+       TEXT '  Year:   '
+SETMSG BYTE 16
+       TEXT 'HFDC Clock Setup'
+SCLKSA DATA 13*SCRWID+13,14*SCRWID+13,15*SCRWID+13
+       DATA 16*SCRWID+13
+       DATA 17*SCRWID+13,18*SCRWID+13,19*SCRWID+13
+SCLKR  DATA 0,12,0,59,0,59,0,0
+       DATA 1,12,1,31,00,99
+H0060  DATA >0060
+PMCOR  DATA >0102
+DEFRD  DATA 0,0,0
+       DATA 64,60,4,96,90,6,128,100,28
+       DATA 160,144,16,192,160,32
+       DATA 224,192,32,256,210,46,288,240,48
+       DATA 320,270,50,352,288,64
+       DATA 384,310,74,416,346,70,480,400
+DEFTND DATA 80
+       EVEN
+CLKVR  DATA >3233             VALID MAX FOR CLOCK  HOURS 23
+       DATA >3539             MINUTES 59
+       DATA >3539             SECONDS 59
+       DATA >FFFF             ANY VALUE FOR AM/PM
+       DATA >3132             MONTH 12
+       DATA >3331             DAY 31
+       DATA >3939             YEAR ANYTHING NUMERIC
+*
+CLPART BYTE >04
+       TEXT 'PART'
+       EVEN
+SETLT  BYTE 10
+       BYTE 'E'+>80
+       TEXT 'xit   '
+       BYTE 'S'+>80
+       TEXT 'et'
+*
+SETLL  DATA 'EE',SCLK5,'SS',SCLK1D,0
+APSET  DATA 'aA',AM,'pP',PM,>8B8B,CLKUP
+       DATA >0D0D,CLKDN,>8A8A,CLKDN,>8F8F,SCLK5,0
+*
+HFDRV  DATA >0203,>0001       SWITCH ORDER FOR HFDC BASE 0
+*
+*

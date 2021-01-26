@@ -1,0 +1,42 @@
+* MODULE NAME - DEFAULTS
+***
+*
+*   SYSTEM DEFAULT VALUES
+*
+***
+*
+MAINDR TEXT '1'
+COPYDR TEXT '2'
+MAXFLP TEXT 'Y'
+MAXHRD TEXT 'N'
+D1SIDE BYTE 'D'
+D1DENS BYTE 'D'
+       BYTE 'D'
+       BYTE 'D'
+       BYTE 'D'
+       BYTE 'D'
+       BYTE 'D'
+       BYTE 'D'
+       TEXT 'DDDDDDDDSS'      Ds/dd defaults for dsk5-8 ss/sd for dsk9
+       BYTE 0  *WORD BOUND
+PRTPAB BYTE 49
+       BYTE 3,>16
+BUFLOC BYTE >05,>00
+       BYTE 80
+BUFLEN BYTE 0,0,0,0
+OUTPUT BYTE 6
+       TEXT 'PI.PIO                                 '
+MDRLPT BYTE >05
+       TEXT 'DSK1.                                  '
+DCOLOR DATA >F187
+MAIND  DATA 1
+COPYD  DATA 2
+DEFIL  DATA 4
+       DATA 5
+       DATA 5
+OS128K DATA 0
+RDALL  DATA 0
+PSALL  DATA 0
+DEFEND
+EMUNUM DATA 0
+       EVEN

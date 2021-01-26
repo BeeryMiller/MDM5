@@ -1,0 +1,135 @@
+DPMPT  TEXT 'Put blank disks in Drives #'
+* DPMPT1 TEXT 'Put blank disk in Drive #1'
+PROC   BYTE 'C'+128
+       TEXT 'ontinue'
+PROE   BYTE 'E'+128
+       TEXT 'xit'
+PROR   BYTE 'R'+128
+       TEXT 'etry'
+PROQ   BYTE 'Q'+128
+       TEXT 'uit'
+PROM   BYTE 'M'+128
+       TEXT 'DM '
+       BYTE >16,>17      ROMAN V
+MDSKM  TEXT 'Put disk 1 '
+MDSKM1 TEXT 'in Drive #'
+CHARS  TEXT '0123456789'
+DSK    TEXT 'DSK '
+REST   TEXT 'Disk:'
+BACKM2 TEXT 'Out:'
+RESTM1 TEXT 'Restore In:'
+DSKMSG TEXT 'Disks to Restore:'
+FILMSG TEXT 'Files to Restore:'
+TAR    TEXT 'Target '
+SRC    TEXT 'Source '
+RSTDNM
+BAKDNM TEXT 'Complete '
+BLANK  TEXT '       '
+STERM  BYTE ' '
+       BYTE 'E'+>80
+       BYTE 'R'+>80
+       BYTE 'R'+>80
+       BYTE 'O'+>80
+       BYTE 'R'+>80
+       BYTE ':'+>80
+       BYTE ' '
+OROVR1 TEXT 'is protected on WDS1'
+OROVR2 TEXT '....Do you want to overwrite (Y/N)? N'
+OF     TEXT 'of'
+NAME   TEXT 'name:'
+* FILE   TEXT 'Filename'
+* SIZE   TEXT 'Size'
+* TLEN   TEXT 'Type    Length'
+BNOFIL TEXT 'No files on Backup disk '
+* UL     DATA >1414,>1414,>1414,>1414,>1414,>1414,>1414
+* DASH   TEXT '-----------------'
+* DIS    TEXT 'DIS/'
+* INT    TEXT 'INT/'
+* FIX    TEXT 'FIX'
+VAR    TEXT 'VAR'
+* PROG   TEXT 'PROGRAM'
+* EMUL   TEXT 'EMULATE'
+* CREAT  TEXT 'Created:'
+* UPDTD  TEXT 'Updated'
+* CATMSG TEXT 'Enter floppy drive number? '
+SPACE  BYTE >20
+REFAIL TEXT 'No MDM'
+       BYTE >20,>16,>17,>20  ROMAN V
+*
+PPAB   DATA >0012,VBUF
+QD     DATA >5050,0,>0003
+RELPAB DATA >0500
+UPBIT  DATA >1000,>0,>2100,>0009
+RELPB1 TEXT 'DSK1.MDM5'
+QDF    BYTE 0            Flag that active disk is quad
+WRITE  BYTE >03
+CLOSE  BYTE >01
+DINT5  BYTE >14          DEFAULT INTERLACE OF 5 FOR HFDC SHIFTED BY 10 LEFT
+*
+MCL    EQU  40
+VBUF   EQU  >2400        VDP SECTOR BUFFER
+PLOC   EQU  >2500        SECTOR I/O PAB
+VPOINT EQU  >834E        DSR POINTER TO VDP BUFFER
+DRIO   EQU  >834C        DSR DR# AND OP TYPE
+SEC#   EQU  >8350        SECTOR # TO READ/WRITE
+PADDR  EQU  >8356        DSR pointer to address of PAB
+MAXM   EQU  75           TOTAL # OF SECTORS INTO CPU MEMORY
+MEMADD EQU  >A400        Start memory store address
+FIBSIZ EQU  32           Size required for a FIB
+FIBPSC EQU  7            # of FIBs in a sector
+LSTST  EQU  >EF00        START ADDRESS OF FIBS IM MEMORY
+       EVEN
+WDSC   DATA >8000        WDS w/cpu I/O bit on
+*
+PROBIT DATA >0800        Protected file bit
+RWS    DATA >0110        READ/WRITE A SECTOR
+WRWS   DATA >0120        READ/WRITE A SECTOR WDS
+FORM   EQU  >0111        FORMAT DISK
+PRO    EQU  >0122        MOD. FILE PROTECT for WDS
+REN    EQU  >0123        RENAME FILE for WDS
+FSIN   EQU  >0124        FILE SECTOR INPUT for Wds
+FSOUT  EQU  >0125        FILE SECTOR OUTPUT for WDS
+DRRD   BYTE >01          DRIVE # AND READ STATUS
+FF     BYTE >FF
+DRWT   DATA >0100        DRIVE # AND WRITE STATUS
+WDRRD  DATA >01FF        Drive # and read status for Sector I/O on wds
+WDRWT  DATA >0100        Drive # and write status for Sector I/O on wds
+DFTAB  DATA DR1          Table of drive default locations
+       DATA DR2
+       DATA DR3
+       DATA DR4
+FIBTAB
+FIB1   DATA FIB+FIBSIZ-2 START ADDRESS OF FIB'S diskette sector #
+FIB2   DATA FIBSIZ*2+FIB-2
+FIB3   DATA FIBSIZ*3+FIB-2
+FIB4   DATA FIBSIZ*4+FIB-2
+FIB5   DATA FIBSIZ*5+FIB-2
+FIB6   DATA FIBSIZ*6+FIB-2
+FIB7   DATA FIBSIZ*7+FIB-2
+*
+DIVTAB
+TTHOU  DATA 10000
+THOU   DATA 1000
+HUN    DATA 100
+TEN    DATA 10
+*
+PGMBIT
+D256   DATA 256
+FDRT   DATA 0
+*
+FIB4   DATA FIBSIZ*4+FIB-2
+FIB5   DATA FIBSIZ*5+FIB-2
+FIB6   DATA FIBSIZ*6+FIB-2
+FIB7   DATA FIBSIZ*7+FIB-2
+*
+DIVTAB
+TTHOU  DATA 10000
+THOU   DATA 1000
+HUN    DATA 100
+TEN    DATA 10
+*
+PGMBIT
+D256   DATA 256
+*
+D256   DATA 256
+*

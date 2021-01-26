@@ -1,0 +1,15 @@
+       LIST
+       COPY "DSK1.CB.CB-EQU"
+       COPY "DSK1.CB.CB-MAIN"
+       COPY "DSK1.CB.CB-BACKUP"
+       COPY "DSK1.CB.CB-DISKS"
+       COPY "DSK1.CB.CB-SUBS"
+       UNL
+       COPY "DSK1.CB.CB-PRINT"
+       COPY "DSK1.CB.CB-NOISE"
+       COPY "DSK1.CB.CB-SUPPORT"
+       LIST
+       COPY "DSK1.CB.CB-DATA"
+       UNL
+       COPY "DSK1.CB.CB-RELOAD"
+       END

@@ -1,0 +1,1415 @@
+***
+*
+*  BL   @EXECOP - STARTS AT FCBASE AND EXECUTES THE APPROPRIATE ROUTINES
+*  ACCORDING TO THE FLAGS THAT ARE SET ON EACH FCB BUFFER.
+*  EXECUTION PROCEEDS IN THE FOLLOWING ORDER:
+*
+*     DELETE ALL FILES WITH THE DELETE FLAG SET
+*     UNPROTECT AND PROTECT ALL FILES THAT HAVE CHANGED PROTECTION STATUS
+*     RENAME ALL FILES WITH THE RENAME FLAG SET
+*     COPY ALL FILES WITH THE COPY OR MOVE FLAG SET
+*     DELETE ALL FILES WITH THE MOVE FLAG SET
+*
+***
+*
+SWPTXT BYTE 11
+       TEXT 'Swap disks?'
+       BYTE 6
+       BYTE 'Y'+>80
+       TEXT 'es '
+       BYTE 'N'+>80
+       TEXT 'o'
+SWPADR DATA 19*SCRWID+14,22*SCRWID+17
+SWPCOM DATA >5979,SWPYES,'NN',DNTSWP,>8F8F,LEV0RT,0
+EXECOP MOV  @VOLFLG,@UPDVOL
+       CLR  @VOLFLG
+       BL   @SETS             Set up winchester flags for hard disk
+       ABS  @HRDS             hard drive?
+       JEQ  SAMEMU            no
+       ABS  @EMUFLG           change dsk1. emulation?
+       JNE  CHGEMU            yes
+       ABS  @UPDVOL           change volume name?
+       JEQ  SAMEMU            no
+CHGEMU CLR  R0
+       LI   R1,TEMP
+       BLWP @RSHRD
+       DATA CHGEMU
+       MOV  @EMUFDR,@TEMP+>1A
+       BL   @MOVE
+       DATA VOLUME,TEMP,10
+       CLR  R0
+       LI   R1,TEMP
+       CLR  @MSSEC
+       BLWP @WSHRD
+       DATA CHGEMU
+       CLR  @UPDVOL           reset flag
+       BLWP @POWRUP           power up hard controller
+       BLWP @PATHMN           set main pathname
+SAMEMU LI   R2,FCBASE    *SEE IF ANY OP FLAGS ARE SET
+       LI   R1,>FF00          Anything at all
+       BL   @GETFIL           See if anything exists
+       DATA ABORT2            Nope
+*
+*THIS SECTION ADDS UP THE TOTAL NUMBER OF SECTORS THAT WILL BE COPIED OR
+*MOVED AND DETERMINES WHETHER OR NOT THERE IS ENOUGH ROOM ON THE COPY DISK
+*
+       BL   @CLTOP            Clear top of screen
+       MOV  @UPDVOL,R4        change volume name?
+       JNE  NAMCHG            yes
+       MOV  @CATACC,R4
+       JNE  SAMVOL
+*
+* DON'T ASK FOR DISK TO BE PUT IN DRIVE ON VOLUME NAME CHANGE
+*
+* NAMCHG MOV  @MAIND,@DRVNUM    Set main drive
+*      MOVB @MAINDR,@DNUM2     "   "     "
+*      BL   @INITDR
+*      DATA MNMES
+NAMCHG BL   @V1LOAD           Load sectors 0 and 1
+       MOV  @UPDVOL,R1
+       JEQ  SAMVOL
+       LI   R1,NVNAM
+       LI   R2,VOLLEN+1
+XVNBAK MOVB *R1+,*R2+
+       CI   R2,VOLUME+10
+       JL   XVNBAK
+       BL   @UPDSM
+SAMVOL SETO @HEADUP           don't recalculate free sectors
+       MOV  @FREEAU,@FREEMN   Save for future reference
+       CLR  R4
+       LI   R2,FCBASE
+TOTCP  LI   R1,>A000
+       BL   @GETFIL
+       DATA CKROOM
+       A    @SECALL(R2),R4
+       INC  R4    *ADD IN FDR
+       AI   R2,FCBLEN
+       JMP  TOTCP
+CKROOM MOV  R4,@TOTCOP   *CHECK TO SEE IF ANYTHING MARKED TO COPY
+       JNE  CKROON
+       BL   @SHOHED
+       DATA 01*SCRWID,VOLUME
+       B    @NOCPS
+*  save the file pointers to vdp, so getdrv doesn't kill them
+CKROON MOV  @FCBEND,R0
+*      LI   R1,FCBASE
+*      S    R1,R0
+*      MOV  R0,@SVLN1
+*      MOV  R0,@SVLN2
+       BL   @VMBW
+       DATA VCBUF+>1B00,FCBASE   PLACE ABOVE WHERE FORMAT WILL TAKE PLACE
+       DATA 1024*3            ALLOW PLENTY OF ROOM FOR PATH SETUP
+       BLWP @GETDRV
+       DATA >0001             copy drive
+*  restore file pointers
+       LI   R1,FCBASE
+       BL   @VMBR
+       DATA VCBUF+>1B00
+       DATA 1024*3            RESTORE THE AREA USED BY PATH SETUP
+       MOV  @DWFORM,R1
+       JNE  RFCN
+       ABS  @HRDD             hard drive we're dealing with here?
+       JNE  RFCN              then do NOT ask if you want to format <geez>
+* Moved so that swap is asked before the reformat question 10/29/88
+       BL   @CLMID            Clear from r7,c0 to command line
+*  decide whether or not to swap disks
+       CLR  @SWPDSK           assume not
+       ABS  @HRDS
+       JNE  DNTSWP
+       ABS  @HRDD
+       JNE  DNTSWP
+*  both input and output drives are floppy.
+       C    @MAIND,@COPYD     same?
+       JNE  DNTSWP            no
+*  same floppy drive - ask them if they want to swap or not.
+       BL   @SCRGEN
+       DATA SWPTXT,SWPADR,2
+       BL   @COMNB
+       DATA SWPCOM
+SWPYES SETO @SWPDSK           flag to swap
+DNTSWP BL   @CLRCOM           CLEAR COMMAND AREA
+       BL   @VDPFIL
+       DATA 19*SCRWID,SCRWID,>2000
+****************************************** 10/29/88
+       BL   @CLRCOM
+       BL   @SCRGEN
+       DATA FORMQ2,FORMA2,2
+       BL   @COMNB
+       DATA RFCLST
+RFCY   MOV  @COPYD,R3
+       BL   @FORMAT
+       CLR  @HEADUP           SET TO RE-CALC THE NUMBER OF FREE SECTORS
+       BL   @REDOCP
+RFCN   BL   @CLRCOM
+       BL   @CLTOP            Clear top of screen
+       SETO @HEADUP           Don't re-calculate number of free sectors
+       MOV  @FREEAU,@FREECP   Save for future reference
+       MOV  @FREEMN,@FREEAU   Restore
+       BL   @SETS
+       BL   @SHOHED           Show header for main disk
+       DATA 01*SCRWID,VOLUME  *IN CASE COPY DISK WAS NOT FORMATTED
+       MOV  @FREECP,@FREEAU   Restore
+       BL   @SETD
+       BL   @SHOHED
+       DATA 04*SCRWID,CPYVOL
+       MOV  @FREECP,R0
+       MOV  R0,@CPYFRE
+       LI   R2,FCBASE         Start of FCB headers
+       ABS  @HRDD             copying to a hard drive?
+       JNE  ENUFRM            yup... don't worry about space requirements
+DUPLP2 LI   R1,>A000          Copy flag
+       BL   @GETFIL           Find anything
+       DATA CROOM             Not found
+       MOV  R2,@SAVR2         Save
+       MOV  R2,R5
+       C    *R5+,*R5+         Point to filename
+       LI   R4,CS1BUF         Copy disk, sector 1
+       BL   @DBS              See if we can find this file
+       JNE  NOTDUP            Nope
+* File being copied has a duplicate on the copy disk. In that case,
+* one of two things will happen. 1) The duplicate file will be
+* killed, in which case the sectors in that file will be free, -or-,
+* 2) The file is written over the duplicate file, in which case
+* everything is fine, _unless_ the copied file is larger than its
+* duplicate, which will create an error if there is insufficient room
+       A    @CPYBUF+SECALL-4,@CPYFRE Count these in free sectors
+       INC  @CPYFRE           Count FCB
+NOTDUP MOV  @SAVR2,R2         Restore R2
+       AI   R2,FCBLEN         Past this file
+       JMP  DUPLP2            Get next
+CROOM  C    @TOTCOP,@CPYFRE   Are we copying more than will fit?
+       JLE  ENUFRM            No
+* User is attempting to copy more than will fit on copy disk.
+       BL   @SHOW$1           display on screen
+       DATA WARNMS            'warning' in inverse video
+       DATA 15*SCRWID+12       r7,c9
+       BL   @SCRGEN           'not enough room on copy disk for all
+       DATA NRMTXT,NRADDR,2   files marked'
+       BL   @CONABO           'continue or abort'
+*  Comes here if 'C'ontinue chosen or room exists
+ENUFRM
+GOAHED BL   @CLMID            Clear middle of screen
+       BL   @SETS             set parms for main disk
+       BLWP @PATHMN           set pathname for main disk
+       BLWP @LDMAIN           Load main disk if single drive processing
+NOCPS  BL   @CLMID            Clear middle of screen
+       LI   R15,EXLIST        Execution table
+       MOV  @FREEMN,@FREEAU   for main disk
+XLP    LI   R2,FCBASE         Start of FCBs
+       MOV  R2,@REDBAS        Save
+       MOV  *R15+,R1          Get flag
+       MOV  *R15+,R3          Get address to branch to
+       MOV  R15,@SAVRT6       Save
+       BL   *R3               Go to it
+       BL   @CLMID
+       MOV  @SAVRT6,R15
+       CI   R15,EXLIST+16
+       JL   XLP
+ABORT2 MOV  @UPDVOL,R0
+       JEQ  EXECRT
+       ABS  @HRDS
+       JNE  EXECRT            hard disk - don't write volume sector
+       BLWP @LDMAIN
+       BL   @UPDSM
+EXECRT B    @LEV0RT           go all the way back
+*
+EXABRT BL   @SHOW$1
+       DATA ABTXT,ERLN#*SCRWID+01
+       BL   @CONABO
+       B    @LEV0RT
+*
+* Execution list.
+EXLIST DATA >4000,DLETE,>1000,UPROUT
+       DATA >A000,FCOPY,>0800,DLETE
+*
+* PRENT  LI   R13,LEV0RT
+* PRES0D MOV  R11,R12
+*      BL   @SHOW$1
+*      DATA PRESS,23*SCRWID+01
+* LDCPLP BLWP @KBSCAN
+*      JNE  LDCPLP
+*      JOC  LDCPLP
+*      CI   R0,>8F00
+*      JNE  CHENTR
+*      B    *R13
+* CHENTR CI   R0,>0D00
+*      JNE  LDCPLP
+*      MOV  R12,R11
+*      B    @CLRCOM
+*
+LDCOPY DATA MIDREG,LDCOP2
+*CKVOL
+LDMAIN DATA MIDREG,LDMAI2
+LDCOP2 MOV  @COPYD,@DRVNUM
+       MOVB @COPYDR,@DNUM
+       LI   R4,CPYVOL
+       LI   R5,CPMES
+       BL   @SETD             Set winchester flags for copy disk
+       JMP  LDDISK
+LDMAI2 MOV  @MAIND,@DRVNUM
+       MOVB @MAINDR,@DNUM
+       BL   @SETS             Set winchester flags for main disk
+       MOV  @TOTCOP,R1        Are we copying any files at all
+       JEQ  TWODRV            No... don't worry about it, then
+       LI   R4,VOLUME
+       LI   R5,MNMES
+*LDDISK C    @COPYD,@MAIND     Drive numbers the same?
+*       JNE  TWODRV            No
+LDDISK ABS  @SWPDSK           swap disks?
+       JEQ  TWODRV            no
+       MOV  *R5+,@DVNAM1
+       MOV  *R5,@DVNAM1+2
+       MOV  R4,@SAVRT4
+ONEDRV BLWP @BEEP
+       LI   R5,DNAME
+MVDNAM MOV  *R4+,*R5+
+       CI   R5,DNAME+10
+       JL   MVDNAM
+       BL   @SHOW$1
+       DATA CTXT8,19*SCRWID+1
+       BL   @CONABO
+*      DATA CHDLST            THIS DOES NOT BELONG HERE 10/29/88
+       BL   @VDPFIL
+       DATA 19*SCRWID,SCRWID,>2000
+CHDRDY
+LDDERR CLR  R0
+       LI   R1,GENBUF
+       BLWP @RSCPU
+       DATA LDDERR
+       MOV  @SAVRT4,R2   *SAVE R2 TO MOVE NAME
+       BL   @COMP$
+       JEQ  RITDSK
+       MOV  @SAVRT4,R4
+       JMP  ONEDRV
+RITDSK BL   @CLRCOM
+TWODRV RTWP
+*
+***
+*
+*  BLWP @DLETE - DELETES FILES WITH BIT 1 (TI) SET IN FLAG BYTE
+*  WHEN WE GET HERE WE KNOW:
+*
+*     R1 HAS THE DELETE FLAG TO USE (DIFFERENT FOR DELETE AND MOVE)
+*     R2 HAS FCBASE IN IT
+*
+***
+*
+DLETE  MOV  R11,@CPYSAV
+       MOV  R1,@DELFLG
+       BL   @COM10
+DELP   MOV  @REDBAS,R2
+       MOV  @DELFLG,R1
+       BL   @GETFIL
+       DATA DELRT
+       BL   @DISFN
+       MOV  R2,R7
+       MOV  R2,@REDBAS   *SAVE YOUR PLACE
+       MOVB @H00,@2(R7)       Clear out flags (once it's deleted, you
+*                              sure aren't gonna do anything else with it)
+       ABS  @HRDS             Winchester?
+       JEQ  DELP1             No, must be floppy
+       BL   @DELP0            Delete
+       CLR  @HEADUP           re-calc bitmap
+       BL   @SHOHED
+       DATA 40,VOLUME
+       JMP  DELP              Next file
+**
+DELP1  MOV  *R7,R3       *GET SECTOR NUMBER
+       SETO @UPDVOL           we've updated sector 0, so save when done
+       BL   @FRESEC      *FREE FDR
+       BL   @DELS1
+* DELERR BLWP @CKF4
+*      DATA ABORT2
+DELERR MOV  *R7,R0
+       LI   R1,SECBUF
+       BLWP @RSCPU
+       DATA DELERR
+       LI   R7,SECBUF+CLUSTR
+       BL   @FREFIL      *FREE FILE CLUSTERS
+       BL   @SHOHED
+       DATA 40,VOLUME
+       JMP  DELP
+DELRT  MOV  @UPDVOL,R2
+       JEQ  DELRT2
+       BL   @UPDSM
+DELRT2 MOV  @CPYSAV,R11
+       B    *R11
+*
+FRECFL LI   R5,FRECSC
+       JMP  FREF
+FREFIL LI   R5,FRESEC
+FREF   MOV  R11,R12
+       SETO R14
+FNTPR1 BL   @DECODE      *R3-SEC # R2,# OF SECTORS
+       MOV  R3,R6
+       JEQ  FREFRT
+FNTPR2 BL   *R5
+       INC  R14
+       C    R14,R2
+       JHE  FNTPR1
+       INC  R6
+       MOV  R6,R3
+       JMP  FNTPR2
+FREFRT B    *R12
+*
+DELCS1 LI   R0,CS1BUF
+       JMP  DEL1
+DELS1  LI   R0,S1BUFF
+DEL1   MOV  R0,R1
+       AI   R1,256
+       MOV  R1,@ENDS1
+DEL1LP C    *R7,*R0+
+       JEQ  FNDFCB  *BETTER BE THERE - NO CHECK FOR END OF SECTOR 1
+       JMP  DEL1LP
+FNDFCB MOV  R0,R1
+       DECT R1      *POINTS TO WHERE MATCH IS
+FNDFLP MOV  *R0+,*R1+
+       CI   R0,S1BUFF+256
+ENDS1  EQU  $-2
+       JL   FNDFLP
+       CLR  *R1
+       B    *R11
+*
+*DISFN2 LI   R3,SECBUF
+*      JMP  DISF
+DISFN  LI   R1,20*SCRWID+11
+       MOV  R2,R3
+       C    *R3+,*R3+
+DISF2  MOV  R11,R12      *R1 HAS VDP ADDRESS
+       BL   @WRITEV      *R3 POINTS TO FDR
+       LI   R1,10
+DISFN1 MOVB *R3+,*R8
+       DEC  R1
+       JNE  DISFN1
+       B    *R12
+*
+***
+*
+*  BL  @FRESEC - FREES A SECTOR FROM THE VOLUME SECTOR
+*      R3 CONTAINS THE SECTOR # TO FREE
+*
+***
+*
+FRECSC LI   R4,CPYVOL+BITMAP
+       JMP  FRE
+FRESEC LI   R4,VOLUME+BITMAP
+*SEE IF DISK IS 80 TK FORMAT
+* * * FRE    CB   @TRKSID-BITMAP(R4),@H50
+* * *  JNE  FRE40
+*IT IS 80 TK SO SEE IF MORE THAN 1600
+*SECTORS ON DISK
+FRE    C    @TOTSEC-BITMAP(R4),@H0640
+       JLE  FRE40
+*THERE ARE SO ENABLE TWO SECS. PER BIT
+*SO IF THIS IS AN ODD SEC. NUMBER THEN IGNORE
+*OTHERWISE, HALVE AND FREE THE SEC.
+       SRL  R3,1
+       JOC  NOFRE
+       C    @TOTSEC-BITMAP(R4),@H0C80        36 sec/trk?
+       JLE  FRE40
+       SRL  R3,1
+       JOC  NOFRE
+*FREE THE SEC.
+FRE40  MOV  R3,R0   *USES R0,R3,R4
+       SRL  R3,3
+       A    R4,R3
+       LI   R4,>0100
+       ANDI R0,>0007
+       JEQ  ZNBYTE
+       SLA  R4,0
+ZNBYTE SZCB R4,*R3
+NOFRE  B    *R11
+*
+*****
+*
+* BL @DELP0 - deletes a file from the winchester
+* In: R7=pointer to start of FCB buffer
+*
+*****
+DELP0  MOV  R11,R4            Save return address
+*   first, unprotect the monster
+       CLR  @>834C            unprotect code
+       MOV  R7,R0
+       C    *R0+,*R0+         add four
+       MOV  R0,@>834E         point to filename
+       BLWP @DSRSUB
+       DATA >A2               change file protection, cpu
+*   now, delete the thing
+       BL   @FILL
+       DATA GENBUF,50,>0000   clear the sucker out
+       MOVB @H07,@GENBUF      Delete opcode
+       BL   @MOVE             move bytes
+       DATA WDSTXT,GENBUF+10,3
+       MOVB @DRVNUM+1,*R1
+       AB   @H30,*R1+         convert to ascii
+       MOVB @DECMAL,*R1+      period
+       LI   R0,PATHS          pathname
+       LI   R3,>0500          'wdsx.' length
+       MOVB *R0+,R2           get length
+       JEQ  DELP2             null length
+       AB   R2,R3             add to length
+       SRL  R2,8              to lsby
+       BL   @MOVER            move bytes
+DELP2  MOVB @3(R7),R2         Get length of filename
+       AB   R2,R3             length
+       SRL  R2,8
+       MOV  R7,R0
+       C    *R0+,*R0+
+       BL   @MOVER
+       MOVB R3,@GENBUF+9      Length of filename
+       BL   @VMBW
+       DATA PABLOC,GENBUF,50
+DELP3  MOV  @PRTPNT,@>8356
+       BLWP @PRTLNK
+       DATA 8
+       JNE  DELP5             No error
+       BL   @OTHERR
+       DATA DUMMY
+       BL   @CONAB1
+       JMP  DELP3
+*   it is dead. return to killer... i mean caller... whatever
+*                         (_we're_ the killer)
+DELP5  C    *R7,@EMUFDR       was that emulating dsk1.?
+       JNE  DELP6             no
+       CLR  R0
+       LI   R1,TEMP
+       BLWP @RSHRD
+       DATA DELP5
+       CLR  @TEMP+>1A
+       CLR  @MSSEC
+       BLWP @WSHRD
+       DATA DELP5
+       CLR  @EMUFDR
+       BLWP @POWRUP
+       BL   @SETD
+       BLWP @PATHCP
+       BL   @SETS
+       BLWP @PATHMN
+DELP6  MOV  R4,R11
+       B    @V1LOAD
+***
+*
+*   BL  @INSS1 - INSERTS THE SECTOR NUMBER IN R2
+* AT THE ADDRESS POINTED TO BY R3
+* AND MOVES EVERYTHING AT AND ABOVE
+* THAT POINT UP ONE WORD UNTIL THE
+* ADDRESS IN R4 IS REACHED
+*
+***
+*
+INSS1  MOV  *R11+,R4
+INSS2  MOV  *R3,R1
+       MOV  R2,*R3+
+       MOV  R1,R2
+       C    R3,R4
+       JL   INSS2
+       B    *R11
+*
+***
+*
+* BL   @DECODE - DECODES THE CLUSTER POINTED TO BY R7
+* AND PLACES THE STARTING SECTOR IN R3
+* AND THE NUMBER OF CONSECUTIVE SECTORS IN R2
+*
+***
+*
+DECODE MOVB *R7+,R3
+       SWPB R3
+       MOVB *R7,R3
+       ANDI R3,>0FFF
+       MOVB *R7+,R2
+       SWPB R2
+       MOVB *R7+,R2
+       SRL  R2,4
+       B    *R11
+*
+***
+*
+*  BL   @UPROUT - THIS WILL UNPROTECT OR PROTECT A FILE ACCORDING
+*  TO THE STATUS OF THE PROTECTION BIT IN THE FCB.
+*  AND RENAME
+*  THIS IS ACCOMPLISHED BY WRITING THE ALREADY CORRECTED FCB OVER THE
+*  OLD ONE ON THE DISK.
+*
+***
+*
+UPROUT MOV  R11,@CPYSAV       Save return address
+       CLR  @OVRALL
+       BL   @COM12
+UPLP   MOV  @REDBAS,R2        Get pointer in FCB list
+       LI   R1,>1000          We want file (un)protects and renames
+       BL   @GETFIL           Try to find any
+       DATA DELRT             Go there if we can't find any
+       MOV  R2,@REDBAS
+       LI   R1,20*SCRWID+14
+       BL   @DISFN+4          Print filename on screen
+       MOV  R2,R7             restore
+       ABS  @HRDS             Is this a winchester?
+       JEQ  UPLP1             No, it ain't
+       MOV  @OPFLAG(R2),R0    Get operation
+       ANDI R0,>0400
+       JEQ  UPLP2             Don't bother renaming
+*   Rename file on a winchester
+UPLP6  MOV  *R2,R0            AU #
+       LI   R1,TEMP
+       BLWP @RSHRD            Read sector from winchester
+       DATA UPLP6             error link
+       MOV  R1,@>8350
+       MOV  R7,R0             FCB for new filename
+       C    *R0+,*R0+         Point to filename
+       MOV  R0,@>834E         new filename pointer
+       BL   @TSTPLS           TEST PATH LENGTH
+       BLWP @DSRSUB
+       DATA >A3               Rename file - CPU
+UPLP2  MOVB @12+4(R7),R0      Get file code
+       ANDI R0,>0800          Protected?
+       JEQ  UPLP4             No
+       SETO @>834C            Protect code
+       JMP  UPLP5
+UPLP4  CLR  @>834C            Unprotect code
+UPLP5  MOV  R7,R0
+       C    *R0+,*R0+         Point to filename
+       MOV  R0,@FAC+4
+       BLWP @DSRSUB
+       DATA >A2               Change file protection - CPU
+       SZCB @H14,@OPFLAG(R7)  Zero out those bits
+       JMP  UPLP
+**
+UPLP1  MOV  @OPFLAG(R2),R0    Get operation
+       ANDI R0,>0400
+       JNE  UPLP7             rename it
+       MOV  *R2,R0
+       LI   R1,GENBUF
+       BLWP @RSCPU
+       DATA UPLP1
+       MOVB @FSTAT(R2),@12(R1)
+       BLWP @WSCPU
+       DATA UPLP1
+       SZCB @H14,@OPFLAG(R2)  zero out those bits
+       JMP  UPLP
+UPLP7  LI   R4,S1BUFF         Sector 1
+       SETO @UPDVOL
+       MOV  R2,R5             Save
+       BL   @DELS1            Delete this entry in sector 1
+       C    *R5+,*R5+         Point to filename
+       BL   @DBS              Try to find file
+       JNE  UNIQRN            Couldn't find it
+       MOVB @OPFLAG(R7),R2    Get operation flag
+       ANDI R2,>0400          A rename??
+       JEQ  UNIQRN            No
+* RENAME ALREADY ON DISK
+       MOV  @OVRALL,R0        Change all?
+       JNE  RNOVR             Yes
+RNERR1 MOV  *R7,R0            Get FCB sector with original filename
+       LI   R1,GENBUF         Buffer
+       BLWP @RSCPU            Read sector
+       DATA RNERR1
+       LI   R3,ORIGFN         xxx in 'You renamed xxx....'
+ORNMLP MOVB *R1+,*R3+
+       CI   R1,GENBUF+10
+       JL   ORNMLP
+       LI   R3,DUPRN          yyy in '....to yyy, which already exists"
+       C    *R7+,*R7+         point to filename
+DUPRLP MOVB *R7+,*R3+
+       CI   R3,DUPRN+10
+       JL   DUPRLP
+       BL   @SHOW$1           Show text
+       DATA DRNTXT,14*SCRWID+01
+       BL   @SHOW$1
+       DATA OVRTXT,17*SCRWID+01
+       BLWP @BEEP             Beep at the user
+*      LI   R1,SCRWID*17+37
+       BL   @COMNB            RNOVRA if All, RNOVR if Yes, NORNO if No
+       DATA DRNLST
+RNOVRA SETO @OVRALL           Change all - OK
+RNOVR  BL   @VDPFIL
+       DATA 14*SCRWID,4*SCRWID,>2000         REMOVE MESSAGE
+       MOV  *R13,R3
+       BL   @FRESEC
+       MOV  R13,R7
+       BL   @DELS1
+       LI   R7,CPYBUF+CLUSTR
+       BL   @FREFIL
+NORNEX MOV  @REDBAS,R5
+       C    *R5+,*R5+
+       LI   R4,S1BUFF
+       BL   @DBS
+UNIQRN MOV  @REDBAS,R7
+       MOV  *R7,R2
+       MOV  R2,R0
+       MOV  R13,R3
+       BL   @INSS1
+       DATA S1BUFF+256
+* UPERR1 BLWP @CKF4
+*      DATA ABORT2
+UPERR1 LI   R1,SECBUF
+       MOV  R1,R3
+       BLWP @RSCPU
+       DATA UPERR1
+       SZCB @H14,@OPFLAG(R7)
+       C    *R7+,*R7+
+UPLP3  MOV  *R7+,*R3+
+       CI   R3,SECBUF+20
+       JL   UPLP3
+* UPERR2 BLWP @CKF4
+*      DATA ABORT2
+UPERR2 BLWP @WSCPU
+       DATA UPERR2
+       BL   @SHOHED
+       DATA 40,VOLUME
+       B    @UPLP
+NORNO  BL   @VDPFIL
+       DATA 14*SCRWID,4*SCRWID,>2000
+       LI   R1,GENBUF
+       MOV  @REDBAS,R2
+       C    *R2+,*R2+
+NORNLP MOV  *R1+,*R2+
+       CI   R1,GENBUF+10
+       JL   NORNLP
+       JMP  NORNEX
+***
+*
+*   BL  @FCOPY - COPIES ALL FILES HAVING A COPY OR MOVE FLAG SET IN THE FLAG
+*   BYTE.
+*
+***
+FCOPY  MOV  R11,@CPYSAV       Save return address
+       CLR  @OVRALL
+       MOV  R2,@RITBAS        Pointer in FCB buffer
+       MOV  R1,@DELFLG        Save copy flag to use
+       BL   @GETFIL           Find any files marked to copy
+       DATA NCPYRT            Go there if couldn't find any copy flags
+*      BL   @CKPP             See if copy disk proprietary protected
+*      DATA ABORT2            If so, goto abort2
+       ABS  @HRDD             Winchester destination?
+       JNE  FILSOK            yes - don't worry about space
+*** See if enough room exists on copy disk for all the files
+FILLP  MOV  @CPYFRE,R5
+       S    @SECALL(R2),R5 *SUBTRACT SECTOR ALLOCATED
+       DEC  R5           *PLUS FDR
+       JGT  FILOK             Plenty of room
+       JEQ  FILOK             not plenty <grin>, but still enough
+       MOV  R2,R15       *SAVE R2 FOR FILE NAME TRANSFER
+       LI   R14,SPFNAM        xxx in 'Not enough room for xxx on copy disk'
+       C    *R15+,*R15+       Point to filename
+SPCLP  MOVB *R15+,*R14+
+       CI   R14,SPFNAM+10
+       JL   SPCLP
+       MOV  R2,R15       *RESAVE BECAUSE DESTROYED IN SCRGEN
+       BL   @SCRGEN
+       DATA SPTXT,SPADR,5
+       BLWP @BEEP
+       BL   @COMNB
+       DATA SPLST
+*  abort _all_ copies
+ABORTA BL   @CLRWAR           clear warning message
+       MOV  @CPYBAS,R2
+       SETO *R2
+       B    @NCPYRT
+*  skip to next file
+SPSKIP CLR  @OPFLAG(R15)      clear this op flag
+       JMP  SPAB
+*  abort from here on
+ABORT1 SETO *R15              indicate no more files
+       AI   R15,-FCBLEN       back up so next check will get end flag
+SPAB   BLWP @BEEP             beep sound
+       BL   @CLRWAR           clear warning message
+       MOV  R15,R2            save fcb pointer
+       JMP  NOAB              check next file
+*  comes here if room for file on disk
+FILOK  MOV  R5,@CPYFRE        Free sectors on copy disk
+NOAB   AI   R2,FCBLEN         Next file
+       MOV  @DELFLG,R1        Get file flag
+       BL   @GETFIL           Find any
+       DATA FILSOK            Go there if no more
+       JMP  FILLP             Check that one
+*** All done checking - room exists on copy disk
+FILSOK BL   @CLMID            clear any warning messages on screen
+       MOV  @FREECP,@CPYFRE
+       CLR  @WFSEC
+       CLR  @SECRED           Sectors read = 0
+       MOV  @CPYBAS,@READIN   CPU copy buffer
+       MOV  @VCOPBF,@VREADN   VDP copy buffer
+       BL   @SHOW$1                   'in:'
+       DATA CPYIN,20*SCRWID+01
+       BL   @SHOW$1
+       DATA CPYOUT,20*SCRWID+24       'out:'
+NXFIL
+       MOV  @REDBAS,R2        Pointer in FCB
+       MOV  @DELFLG,R1        Copy flag to find
+       BL   @GETFIL           Find
+       DATA FWRITE            No more files
+*   Found a file to load
+       LI   R1,20*SCRWID+13   \
+       BL   @DISFN+4           | Write filename to screen
+       MOV  R2,R7             Save
+       AI   R2,FCBLEN         Next file
+       MOV  R2,@REDBAS        *FORCE IT TO POINT TO NEXT FILE - FILE NOT RESET
+       MOV  @SECALL(R7),@RFSEC        Get total sectors in this file
+       JEQ  NXFIL             Empty file - get next file
+       ABS  @HRDS             Hard drive?
+       JEQ  CPERR1            No (how nice)
+       CLR  @RCRSEC           Start sector (offset) = >0000
+CPERR1 ABS  @HRDS             Hard drive?
+       JNE  MIDFL2            Yes
+       LI   R1,SECBUF         Sector buffer
+       MOV  *R7,R0            Get sector number of FDR
+       BLWP @RSCPU            Read
+       DATA CPERR1            Retry address
+       SETO @RCURNT           Sectors read in cluster - base 1 offset
+       MOV  @DECPNT,@RCLUST   Point to start of clusters
+NXTCL  MOV  @RCLUST,R7        Get cluster pointer
+       BL   @DECODE           Decode pointers
+       MOV  R7,@RCLUST        Save cluster pointer
+       MOV  R3,@RCRSEC        Start sector
+       JEQ  NXFIL             No more clusters
+       MOV  R2,@RCONSE        Save number of sectors
+MIDFL2 MOV  @RCRSEC,R0        Get sector number
+       ABS  @HRDS             hard drive?
+       JEQ  CF1               no..... floppy
+*  load from hard drive
+       MOV  @REDBAS,R0        FCB pointer to the file after this
+       AI   R0,-FCBLEN        back up
+       C    *R0+,*R0+         point to filename
+       LI   R4,READIN
+       MOV  *R4,R1            CPU buffer
+       LI   R2,>FF00          End of memory
+       LI   R3,>A4            Read into CPU
+       C    R1,R2             At end?
+*      JL   CHA               No
+       JLT  CHA               NO, **** changed to fix bug for failure with
+* 67 files. this failed because r1 would end up as a >0000
+       LI   R4,VREADN
+       MOV  *R4,R1            VDP buffer
+       LI   R2,>3800          End
+       LI   R3,>24            VDP file read
+       C    R1,R2             At end?
+       JH   FWRITE            Sure are - memory _all_ filled up
+       LI   R0,20*SCRWID+13   Filename location in VDP
+CHA    MOV  R3,@CHC           Subroutine access code
+       S    R1,R2             # sectors that will fit in buffer
+       AI   R2,>0100          Plus one for not having R2 all the way
+       SRL  R2,8              To LSBy
+       C    R2,@RFSEC         Room here for the entire file?
+       JL   CHB               No
+       MOV  @RFSEC,R2         Yes.... total sectors to copy
+*  R0 = location of filename in either VDP or CPU
+*  R1 = start of buffer
+*  R2 = MSBY number of sectors that will fit into buffer
+CHB    MOV  R2,@>834C         Sectors to transfer
+       MOV  R0,@>834E         Pointer to filename
+       CLR  @>8350            pointer toadditional info - >8300
+       MOV  R1,@>8300         start of buffer
+       MOV  @RCRSEC,@>8302
+       CLR  @>830A
+       A    R2,@RCRSEC        New start sector
+       A    R2,@SECRED        Sectors read into memory
+       S    R2,@RFSEC         Sectors left to read
+       SLA  R2,8              To MSBy
+       A    R2,*R4            New buffer location
+       BLWP @DSRSUB           Execute subroutine
+CHC    DATA >0000             Sub code will be filled in above
+       MOV  @RFSEC,R0         Sectors left to read
+       JMP  CHD
+*  Load from floppy
+CF1    BL   @FILLUP           Read it
+       DATA FWRITE            If buffer full, goto fwrite
+       INC  @RCRSEC           Next sector in cluster
+       INC  @SECRED           Number of sectors in buffer
+       DEC  @RFSEC            Any more in this file?
+CHD    JNE  CF4               Yes
+       B    @NXFIL            Get next file
+CF4    ABS  @HRDS             Hard drive?
+       JNE  MIDFL2            Yes
+       INC  @RCURNT           Sectors read in this cluster
+       C    @RCURNT,@RCONSE   Equal to end?
+       JL   MIDFL2            No - keep reading
+       JMP  NXTCL             Yes - get next cluster block
+*
+*NOW WRITE THE SECTORS IN MEMORY TO DISK
+*INITIALIZE MEMORY POINTERS
+FWRITE MOV  @CPYBAS,@RITEO    CPU copy buffer
+       MOV  @VCOPBF,@VRITEO   VDP copy buffer
+       BL   @SETD             set hard drive parameters for destination
+       BLWP @PATHCP           Set path, copy disk
+       BLWP @LDCOPY           Load copy disk
+       MOV  @WFSEC,R13        Get start write sector
+       JEQ  NXTFL2            0 - must mean we're not in middle of file
+       B    @MIDFL4           in the middle of writing a file
+NXTFL2 MOV  @RITBAS,R2        Pointer in FCB block
+       MOV  @DELFLG,R1        Get copy flag
+       BL   @GETFIL           Try to find some files like that
+       DATA COPYRT            None - must be all done
+       INV  R1                Invert back
+       SZCB R1,@OPFLAG(R2)    Mask out copy bit
+       MOV  R2,@RITBAS        Resave pointer into FCB buffer
+       LI   R1,20*SCRWID+29    Screen location
+       BL   @DISFN+4
+       LI   R4,CS1BUF         Copy disk sector 1 buffer
+       MOV  R2,R5
+       C    *R5+,*R5+
+       BL   @DBS              Try to find that file
+       JNE  RESFDR            It doesn't exist
+** Duplicate filename on copy disk. Ask user what s/he wants to do
+       ABS  @OVRALL           Should we kill all files?
+       JNE  RITOVR            Yes
+       LI   R1,CPYBUF
+       LI   R2,DUPFN
+DUPLP  MOVB *R1+,*R2+
+       CI   R1,CPYBUF+10
+       JL   DUPLP
+       BL   @SCRGEN
+       DATA DUPTXT,DUPADR,3
+       BLWP @BEEP
+*      LI   R1,18*SCRWID+37
+       BL   @COMNB
+       DATA DUPLST
+NOROVR BL   @VDPFIL
+       DATA 15*SCRWID,4*SCRWID,>2000
+       MOV  @RITBAS,R2
+       MOV  @SECALL(R2),R3
+       MOVB @H00,@OPFLAG(R2)
+SKNXT  MOV  @RITEO,R1
+       CI   R1,>FF00
+       JL   USECP3
+       MOV  @VRITEO,R1
+       CI   R1,>3800
+       JH   ALLSK
+       A    @H0100,@VRITEO
+       JMP  SKMOR
+USECP3 A    @H0100,@RITEO
+SKMOR  DEC  R3
+       JNE  SKNXT
+       JMP  NXTFL2
+ALLSK  CLR  @RFSEC
+       B    @FILMEM
+*
+RITOVA SETO @OVRALL           Indicate overwrite all files
+RITOVR BL   @VDPFIL           Clear warning message from screen
+       DATA 15*SCRWID,4*SCRWID,>2000
+       ABS  @HRDD             Hard drive??
+       JEQ  RITOV1
+       MOV  @RITBAS,R7        Pointer to FCB
+*+*    BL   @DELP0            Delete the file
+*+*    BL   @C1LOAD           Reload sectors 0&1
+       JMP  RESFDR
+RITOV1 MOV  *R13,R3           Get sector number of FDR
+       BL   @FRECSC           Free that sector
+       MOV  R13,R7
+       BL   @DELCS1           Delete from sector 1
+       LI   R7,CPYBUF+CLUSTR
+       BL   @FRECFL           Free clusters
+       BL   @UPDSC
+       CLR  @HEADUP
+       BL   @SHOHED
+       DATA 4*SCRWID,CPYVOL
+       MOV  @FREEAU,@CPYFRE
+       MOV  @RITBAS,R5
+       C    *R5+,*R5+
+       LI   R4,CS1BUF
+       BL   @DBS
+
+*
+*NOW RESERVE AN FDR SECTOR ANYWHERE FROM SEC. 0 ON
+RESFDR
+       ABS  @HRDD
+       JNE  RESFD1
+       MOV  @RITBAS,R2
+       MOV  @SECALL(R2),R2    get sector size
+* CORRECTION SHOULD BE TESTING CPYVOL NOT SOURCE VOLUME
+       C    @CPYVOL+TOTSEC,@H0640     1600+ sectors?
+       JLE  $+10
+       INC  R2
+       ANDI R2,>FFFE
+       INC  R2                plus extra fdr
+       INC  R2                fdr sector
+       C    R2,@CPYFRE        room?
+       JLE  RESFD1            yes
+* out of room
+       BL   @OTHERR
+       DATA NMSMSG
+OROOM  BL   @SHOW$1
+       DATA CNABT,22*SCRWID+12
+       BL   @COMB
+       DATA NOSCL1
+NOSC2  BL   @CLRCOM
+       BL   @C1LOAD
+       CLR  @HEADUP
+       BL   @SHOHED
+       DATA 4*SCRWID,CPYVOL
+       MOV  @FREEAU,@CPYFRE
+       JMP  RESFDR
+NOSCL1 DATA >458F,LEV0RT,'CC',ABORT2
+       DATA 'SS',NOSC2,0
+*
+RESFD1 ABS  @HRDD             Hard drive as destination?
+       JNE  CHE               Yup
+       CLR  R2                We would like any sector from 0 on
+       BL   @GETSEC           Get it, please
+       MOV  R2,@CPYFDR        This is the sector for our FDR
+       MOV  R13,R3            Location to insert FDR
+       MOV  @CS1BUF+252,R4    Is there room to insert a new file
+       JEQ  $+10              Yes
+       BL   @OTHERR
+       DATA DFMSG
+       JMP  OROOM
+       BL   @INSS1            Insert into sector 1
+       DATA CS1BUF+256        All the way through sector 1
+       LI   R1,CPYBUF         Buffer to build FDR
+       MOV  R1,R2             Save
+       LI   R3,FCBLEN-4       Length of actual sector contents
+       MOV  @RITBAS,R0        FCB buffer for this file
+       C    *R0+,*R0+         To filename
+WBLP   MOV  *R0+,*R1+         \
+       DECT R3                 | Write out first 28 bytes
+       JNE  WBLP              /
+WBLP2  CLR  *R1+              \
+       CI   R1,CPYBUF+256      | Clear to end
+       JL   WBLP2             /
+       MOV  @SECALL-4(R2),@WFSEC     Total sectors to write in this file
+       JNE  $+6               not an empty file - continue
+       B    @CHJ              empty file - abort
+       MOV  @ENCPNT,@WCLUST   Cluster pointers in copy FDR
+* FIX TO TURN OFF UPDATE BIT BEFORE WRITING TO FLOPPY
+       MOVB @CPYBUF+12,R2
+       ANDI R2,>EF00
+       MOVB R2,@CPYBUF+12
+       LI   R2,34             Normal start of data
+       SETO @WCONSE
+       BL   @GETSEC           Try to get a free sector
+       MOV  R2,@WSTSEC   *STORE THE STARTING SECTOR NUMBER
+       MOV  R2,@WCRSEC   *STORE THE CURRENT SECTOR NUMBER
+       JMP  MIDFL4
+*  Hard drive. Generate file header
+CHE    MOV  @RITBAS,R2        Pointer to start of FCB
+       C    *R2+,*R2+         Point to filename
+       MOV  R2,@>834E
+       BL   @TSTPLD           TEST PATHLENGTH
+       CLR  @>834C            Write header
+       CLR  @>8350
+       LI   R0,>8300
+       CLR  *R0+
+       MOV  @>E(R2),@WFSEC    Total sectors to write in this file
+*      JEQ  CPERR5            Empty file - don't bother copying it
+       JEQ  CHJ               Empty file jump was incorrect 10/29/88
+       MOV  @WFSEC,*R0+       Total sectors to allocate
+       MOV  @>C(R2),R1        file status flags | records / AU
+       ORI  R1,>1000          SET UPDATE FLAG ON
+       MOV  R1,*R0+
+       MOV  @>10(R2),*R0+     EOF offset | logical record length
+       MOV  @>12(R2),*R0+     #recs allocated
+       CLR  *R0+              MSByy of WFSEC | MSByy of #recs allocated
+       CLR  *R0+              extended record length
+       BLWP @DSRSUB
+       DATA >A5               Write file - CPU
+       CLR  @WCRSEC
+*
+MIDFL4 MOV  @WCRSEC,R0        Get sector number
+       ABS  @HRDD             hard drive?
+       JEQ  CF2               no..... floppy
+*  write to hard drive
+       MOV  @RITBAS,R0        address of fcb for this file
+       C    *R0+,*R0+         Point to filename
+       LI   R4,RITEO
+       MOV  *R4,R1            CPU buffer
+       LI   R2,>FF00          End of memory
+       LI   R3,>A5            Read into CPU
+       C    R1,R2             At end?
+       JL   CHF               No
+       LI   R4,VRITEO
+       MOV  *R4,R1            VDP buffer
+       LI   R2,>3800          End
+       LI   R3,>25            VDP file write
+       C    R1,R2             At end?
+       JH   FILMEM            Sure are - memory _all_ filled up
+       LI   R0,20*SCRWID+29   Filename location in VDP
+CHF    MOV  R3,@CHH           Subroutine access code
+       S    R1,R2
+       AI   R2,>0100          Plus one for not having R2 all the way
+       ANDI R2,>FF00
+       SRL  R2,8              To LSBy
+       C    R2,@WFSEC         Room here for the entire file?
+       JL   CHG               No
+       MOV  @WFSEC,R2         Yes.... total sectors to copy
+*  R0 = location of filename in either VDP or CPU
+*  R1 = start of buffer
+*  R2 = MSBY number of sectors that will fit into buffer
+CHG    MOV  R2,@>834C         Sectors to transfer
+       MOV  R0,@>834E         Pointer to filename
+       CLR  R3                Start of "additional info"
+       MOVB R3,@>8350
+       LI   R3,>8300          Start of additional info block
+       MOV  R1,*R3+           Start of buffer
+       MOV  @WCRSEC,*R3+      Start sector
+       A    R2,@WCRSEC        New start sector
+       A    R2,@WCONSE        Sectors read into memory
+       S    R2,@WFSEC         Sectors left to read
+       S    R2,@SECRED        Sectors left in buffer
+       SLA  R2,8              To MSBy
+       A    R2,*R4            New buffer location
+       BLWP @DSRSUB           Execute subroutine
+CHH    DATA >0000             Sub code will be filled in above
+       MOV  @WFSEC,R0         Sectors left to read
+       JMP  CHI
+CF2    BL   @EMPTY            Write sector
+       DATA FILMEM            Empty buffer address
+       INC  @WCONSE           Number of consecutive sectors in cluster
+       DEC  @WFSEC            One less sector in this file
+CHI    JNE  MIDDLE            Not done yet!
+*TO BE HERE THE END OF A FILE HAS BEEN REACHED IN WRITING
+*IT TO THE COPY DISK.  NOW THE LAST CLUSTER NEEDS TO BE
+*WRITTEN OUT TO THE COPY FDR BUFFER, THE FDR NEEDS TO BE
+*WRITTEN ONTO THE COPY DISK IN THE SECTOR RESERVED FOR IT
+       ABS  @HRDD
+       JNE  CHJ
+       BL   @ENCOD2           Encode last cluster
+CPERR5 MOV  @CPYFDR,R0        Get FDR sector number
+       LI   R1,CPYBUF         Buffer
+       BLWP @WSCPU            Write FDR out to reserved sector
+       DATA CPERR5            Retry address
+       BL   @UPDSC            Write sectors 0 and 1 back out to disk
+CHJ    CLR  @HEADUP
+       BL   @C1LOAD           Reload copy sectors 0 and 1
+       BL   @SHOHED           Show header again
+       DATA 4*SCRWID,CPYVOL
+       MOV  @FREEAU,@CPYFRE
+       B    @NXTFL2           Start writing a new file
+*
+*MIDDLE OF FILE, SO ALLOCATE ANOTHER SEC. AND KEEP GOING
+MIDDLE ABS  @HRDD             Hard drive?
+       JEQ  CF3               No
+       MOV  @SECRED,R0
+       JMP  CHK
+CF3    MOV  @WCRSEC,R2        Current sector
+       INC  R2                Start search with next sector
+CWELP  BL   @GETSEC           Try to find it
+       JEQ  SAMCL             Gee, it was actually available
+       BL   @ENCOD2      *THE SEC. ASKED FOR WAS NOT AVAILABLE SO WRITE CLUSTER
+       MOV  R2,@WSTSEC   *NOW THE SEC. GOTTEN IS THE START OF A NEW CLUSTER
+SAMCL  MOV  R2,@WCRSEC        New current sector number
+       DEC  @SECRED           Any more sectors in this buffer?
+CHK    JNE  MIDFL4            Yes
+*** Buffer all written out
+FILMEM MOV  @CPYBAS,@READIN   CPU buffer
+       MOV  @VCOPBF,@VREADN   VDP buffer
+       BL   @SETS             set parms, source drive
+       BLWP @PATHMN           Set path name, main disk
+       BLWP @LDMAIN           Load main disk
+       MOV  @RFSEC,R0         Any sectors left in file we were reading?
+       JNE  NEOF              Yes, there are
+       B    @NXFIL            Get the next file
+NEOF   B    @MIDFL2           Keep reading that file
+*****
+***** Buffer operations
+*****
+* EMPTY  BLWP @CKF4
+*      DATA ABORT2
+EMPTY  MOV  @RITEO,R1
+       CI   R1,>FF00
+       JL   USECP2
+       MOV  @VRITEO,R1
+       CI   R1,>3800
+       JH   EMPTY2
+       BLWP @WSVDP
+       DATA CPWERR
+       A    @H0100,@VRITEO
+       JMP  NOTEMP
+USECP2 BLWP @WSCPU
+       DATA CPWERR
+       A    @H0100,@RITEO
+NOTEMP INCT R11
+       B    *R11
+FULL
+EMPTY2 MOV  *R11,R11
+       B    *R11
+CPWERR JNE  ABRTOP
+       MOV  @WCRSEC,R2
+       INC  @SECRED
+       JMP  CWELP
+ABRTOP B    @ABORTA
+*
+FILLUP MOV  R0,@RCRSEC
+*      BLWP @CKF4
+*      DATA ABORT2
+       MOV  @READIN,R1
+       CI   R1,>FF00
+       JL   USECPU
+       MOV  @VREADN,R1
+       CI   R1,>3800
+       JH   FULL
+       A    @H0100,@VREADN
+       MOV  @RCRSEC,R0
+       BLWP @RSVDP
+       DATA CPERR2
+       JMP  NOTFL2
+USECPU A    @H0100,@READIN
+       MOV  @RCRSEC,R0
+       BLWP @RSCPU
+       DATA CPERR2
+NOTFL2 INCT R11
+       B    *R11
+CPERR2 MOV  @RCRSEC,R0
+       MOV  R11,@SAVRT4
+       LI   R1,BDSCNO
+       BLWP @BINDEC
+       BL   @CLRCOM
+       BL   @SHOW$1
+       DATA BDSC$,ERLN#*SCRWID+01
+       BL   @CONABX
+       DATA ABORT2
+       MOV  @SAVRT4,R11
+       JMP  NOTFL2
+*
+CPYRT  BLWP @LDCOPY
+*CPERR7
+COPYRT BL   @UPDSC
+       BLWP @LDMAIN
+       CLR  @TOTCOP
+NCPYRT MOV  @CPYSAV,R11
+       B    *R11
+*
+UPDSM  LI   R2,MBUFFS
+       JMP  UPDS
+UPDSC  LI   R2,CBUFFS
+UPDS   MOV  @HRDX,R0
+       ABS  *R0               hard or floppy?
+       JNE  UPDSH             DO NOT write on hard drive - taken care of
+       CLR  R0
+       MOV  *R2+,R1
+       BLWP @WSCPU
+       DATA EXABRT
+       MOV  @DIRAUX,R0
+       MOV  *R0,R0            get file pointer block sector #
+       MOV  *R2,R1
+       BLWP @WSCPU
+       DATA EXABRT
+UPDSH  CLR  @UPDVOL
+       B    *R11
+*
+*THIS IS USED IN THE DISK TESTS TO ALLOCATE
+*A SPECIFIC SEC. AND NO OTHER - I.E. BAD SECTOR
+GETA   SETO @NOCONS
+       JMP  GETSE2
+*
+*THIS IS USED TO ALLOCATE A SEC.
+*R2 SHOULD CONTAIN THE SEC. THAT YOU WOULD LIKE TO HAVE
+*IF IT IS AVAILABLE IT WILL BE MARKED AS ALLOCATED AND THE
+*EQUAL BIT IS SET.  IF NOT AVAILABLE, THEN THE NEXT AVAILABLE
+*SEC. IS MARKED, THE EQUAL BIT IS RESET, AND THE SEC. NUMBER
+*IS RETURNED IN R2.
+GETSEC CLR  @NOCONS
+GETSE2 CLR  @DSKFUL
+       SETO R3     *R3 IS USED TO SET OR RESET THE EQUAL BIT BEFORE RETURNING
+*SEE IF MORE THAN 1600 SECTORS ON DISK
+       C    @CPYVOL+TOTSEC,@H0640
+       JLE  DK40TK
+*THERE ARE MORE THAN 1600 SECTORS SO
+*ALLOCATE 2 SECS. PER BIT
+*THEN IF THIS IS AN ODD SECTOR
+       SRL  R2,1
+       JNC  DK40TK
+*THEN ASSUME IT IS UNALLOCATED AND RETURN
+*UNLESS NOCONS IS SET IN WHICH CASE THE SEC. IS MARKED
+       MOV  @NOCONS,R4
+       JNE  DK40TK
+       SLA  R2,1
+       INC  R2
+       JMP  SCNMOK
+*ELSE DIVIDE IT BY 2 AND TRY TO ALLOCATE LIKE NORMAL
+*ELSE DO NORMALLY
+DK40TK CLR  R4
+GETSE1 MOV  R2,R5
+       MOV  R2,R0
+       SRL  R5,3         *GET IT ON A BYTE BOUNDARY
+       AI   R5,CPYVOL+BITMAP  *POINT TO IT
+       CB   *R5,@HFF     *SEE IF ANY ARE AVAILABLE
+       JEQ  BYTFUL
+*THERE ARE SOME SEC. LEFT IN THIS BYTE SO FIND WHICH ONES
+       MOVB *R5,R4
+       LI   R1,>0100
+       ANDI R0,>0007     *GET THE THE BYTE MASK
+       JEQ  NOSHIF
+       SLA  R1,0         *GET THE BIT MASK FOR THAT SECTOR
+NOSHIF CZC  R1,R4
+       JNE  SECFUL
+       SOCB R1,*R5
+*IF THIS IS FOR AN 80 TK DISK
+*THEN MULTIPLY R2 BY 2 TO GIVE THE CORRECT SEC. NUMBER
+       CB   @CPYVOL+TRKSID,@H50
+       JNE  SCNMOK
+*SEE IF MORE THAN 1600 SECTORS
+       C    @CPYVOL+TOTSEC,@H0640
+       JLE  SCNMOK
+       SLA  R2,1         *THIS MAKES SURE THAT NEW 80 TK ALLOCS ARE ON EVEN SECS
+SCNMOK INC  R3
+GETSRT B    *R11
+*THE BYTE WAS FULL SO GO TO NEXT BYTE
+BYTFUL INC  R3           *MAKE EQUAL BIT WILL BE RESET ON RETURN
+       SRL  R2,3
+       INC  R2
+       SLA  R2,3
+       C    R2,@CPYVOL+TOTSEC *SEE IF ANY SECTORS ARE LEFT
+       JL   GETSE1
+*WE'VE REACHED THE END OF THE BITMAP.  IF WE HAVEN'T TRIED GETTING
+*SECS. FROM 0-34 THEN TRY OTHERWISE THERE AREN'T ANY MORE SECS. TO GET.
+       MOV  @DSKFUL,R2
+       JNE  NOSECS
+       SETO @DSKFUL
+*IF NOCONS IS SET AND THE WANTED SEC. IS NOT AVAILABLE
+*THEN RETURN WITHOUT ALLOCATING ANYTHING
+SECFUL MOV  @NOCONS,R5
+       JNE  GETSRT
+       INC  R2
+       INC  R3
+       JMP  GETSE1
+*NO MORE SECTORS LEFT ON DISK, SO DISPLAY ERROR MESSAGE AND ABORT
+NOSECS BL   @OTHERR
+       DATA NMSMSG
+       BL   @SHOW$1
+       DATA CNABT,22*SCRWID+12
+       BL   @COMB
+       DATA NOSCL
+NOSCL  DATA >458F,LEV0RT,'CC',ABORT2,0
+       DATA 'SS',NOSC2,0
+*
+*R1 CONTAINS A MASK WITH EACH BIT SET THAT YOU WANT TO SEARCH FOR
+*R2 IS RETURNED POINTING TO THE FILE THAT MATCHES THE MASK IF A
+*MATCH OCCURS, OTHERWISE A BRANCH TO THE ROUTINE IN THE DATA STATEMENT
+*AFTER THE CALL IS MADE.
+GETFIL INV  R1
+GETFI2 C    *R2,@HFFFF
+       JEQ  NOMORE
+       CLR  R3
+       MOVB @R2(R2),R3
+       SZC  R1,R3
+       JNE  FLGMAT
+       AI   R2,FCBLEN
+       JMP  GETFI2
+FLGMAT INCT R11
+       B    *R11
+NOMORE MOV  *R11,R11
+       B    *R11
+*
+*THIS AUTOMATICALLY USES WCLUST TO WRITE OUT CLUSTER
+ENCOD2 MOV  @WCLUST,R6
+*
+*THIS MUST HAVE R6 POINTING TO WHERE THE CLUSTER SHOULD BE WRITTEN
+       MOV  @WSTSEC,R3
+       MOV  @WCONSE,R4
+       CI   R4,>FFFF
+       JEQ  NOCLUS
+       ANDI R4,>0FFF
+       SRC  R4,4
+       ANDI R3,>0FFF
+       SOCB R3,R4
+       SWPB R3
+       MOVB R3,*R6+
+       MOVB R4,*R6+
+       SWPB R4
+       MOVB R4,*R6+
+       MOV  R6,@WCLUST
+NOCLUS B    *R11
+*
+***
+*
+*   BL   @BBS - BUFFER BINARY SEARCH
+*   BL   @DBS - DISK BINARY SEARCH
+*
+* PARAMETERS: R4 - POINTS TO SECTOR 1 BUFFER
+*             R5 - POINTS TO STRING (NOT LENGTH)
+*
+* USES: R0 - SECTOR # FOR DISK READ
+*       R1 - READ IN BUFFER
+*       R2 - SEARCH POINTER
+*       R3 - LOWER LIMIT
+*       R4 - UPPER LIMIT
+*       R5 - SECTOR 1 BUFFER
+*       R6 - BINARY LOOP COUNTER
+*       R7 - *
+*      R12 - *
+*      R13 - MIDPOINT; IF A MATCH IS NOT FOUND FOR THE STRING, THEN THIS
+*            POINTS TO WHERE IT SHOULD GO IN SECTOR 1 AND THE EQUAL BIT IS
+*            RESET.  IF A MATCH IS FOUND THEN THE EQUAL BIT IS SET AND THIS
+*            REGISTER POINTS TO THE SECTOR # IN THE SECTOR 1 BUFFER
+*      R14 - RETURN ADDRESS
+*      R15 - FLAG FOR BUFFER OR DISK SEARCH
+*
+***
+*
+*BBS    SETO R15
+*      JMP  BSRCH
+DBS    CLR  R15
+BSRCH  MOV  R11,R14
+       LI   R6,7
+       MOV  R4,R3
+       AI   R4,254
+BSLP   MOV  R4,R13       *FIRST FIND MIDPOINT
+       S    R3,R13
+       SRL  R13,2
+       SLA  R13,1
+       A    R3,R13
+BSERR1 MOV  *R13,R0
+       JEQ  LTHAN
+       MOV  R15,R15
+       JEQ  DSRCH
+       LI   R2,FCBASE
+MSRCH  C    R0,*R2       *MEMORY SEARCH
+       JEQ  FBFCB
+       AI   R2,FCBLEN
+       JMP  MSRCH
+FBFCB  C    *R2+,*R2+    *POINT TO NAME
+       JMP  GOTMID
+DSRCH  LI   R1,CPYBUF
+       MOV  @HRDX,R2
+       ABS  *R2               hard or floppy?
+       JEQ  DSRCH1            floppy
+       BLWP @RSHRD
+       DATA BSERR1
+       JMP  DSRCH2
+DSRCH1 BLWP @RSCPU
+       DATA BSERR1
+DSRCH2 MOV  R1,R2
+GOTMID MOV  R5,R1
+       BL   @COMP$
+       JL   LTHAN
+       JH   GRTHAN
+       B    *R14         *MUST BE EQUAL
+LTHAN  MOV  R13,R4
+       DEC  R6
+       JNE  BSLP
+       JMP  RESRT
+GRTHAN MOV  R13,R3
+       DEC  R6
+       JNE  BSLP
+       INCT R13
+RESRT  INC  R6           *RESET EQUAL BIT
+       B    *R14
+*
+CLRWAR MOV  R11,R12
+       BL   @VDPFIL
+       DATA >0230,240,>2000
+       B    *R12
+*
+****************************
+* MUST TEST IF PATH LENGTH WILL EXCEED 40 FOR COPY AND RENAME
+****************************
+*
+TSTPLS MOVB @PATHS,R0         GET PATH LENGTH FOR SOURCE
+       JMP  $+6
+TSTPLD MOVB @PATHD,R0         GET PATH LENGTH FOR DEST.
+       MOV  @>834E,R1
+       DEC  R1                POINT TO LENGTH OF FILENAME
+       MOVB *R1,R1            GET LENGTH
+       AB   R1,R0             ADD PATH LENGTH TO FILE LENGTH
+       SRL  R0,8
+       CI   R0,35             WDSX. IS NOT IN THE PATH LENGTH
+       JGT  TSTFAL
+       RT
+TSTFAL BL   @OTHERR
+       DATA PTHERR
+       BL   @CONAB1
+       JMP  TSTFAL
+*
+PTHERR BYTE 18
+       TEXT 'Pathname too long.'
+       EVEN

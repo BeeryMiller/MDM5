@@ -1,0 +1,476 @@
+*******************************
+* Restore Floppy to WDS       *
+*******************************
+*
+* Before the process begins it must make a list of all protected
+* files on the WDS so that they can be processed properly
+* Either skipped or unprotected and over written
+*
+RESTOR LI   R5,>1000     PUT LIST INTO VDP
+       LI   R4,FCBP      fcb table for WDS
+       INC  @DNTG        Set # of disks to go to 1
+PREST1 MOV  *R4,R1       Get a sector #
+       JEQ  BRESTB       Done
+       BL   @WRTSCW
+       DATA WBUF1
+       DATA WDRRD        Get a sector
+       DATA PREST1      Error
+       INCT R4
+       MOV  @WBUF1+12,R3
+       COC  @PROBIT,R3   Is protect bit set
+       JNE  PREST1       No
+       INC  @PROCNT      Add to count of protected files
+       MOV  R5,@PRESTD   VDP LOCATION TO PUT NAME INTO
+       BLWP @VMBW
+PRESTD DATA 0
+       DATA WBUF1
+       DATA 10
+       AI   R5,10        POINT TO NEXT SAVE AREA
+       JMP  PREST1       GET NEXT NAME
+BRESTB BLWP @BEEP
+       JMP  BRESTR
+BRESTH BLWP @HONK
+BRESTR BLWP @VMBW        Begin restore
+       DATA MCL*18+1
+       DATA MDSKM
+       DATA 21
+       MOVB @FDRS,R1     Get # of 1st drive
+       MOVB R1,@DRRD
+       MOVB R1,@DRWT
+       AI   R1,>3000
+       LI   R0,MCL*18+22 1st drive
+       BLWP @VSBW
+       LI   R0,MCL*3+13
+       BLWP @VSBW        ACTIVe drive
+       MOV  @DNTG,R3
+       BLWP @H2DM        Convert to decimal
+       DATA BACK#        Store in back#
+       BL   @GETKYC      WAIT for a 'c' key
+       BL   @CLRLN
+       DATA MCL*18,1
+       CLR  @SSEC        Get sector 0
+       BL   @GETSEC      Make sure this is the correct disk
+       DATA WBUF1
+       DATA DRRD
+       DATA BRESTH       Error TRY AGAIN
+       LI   R2,10        10 characters to test
+       LI   R1,BACKN
+       LI   R0,WBUF1
+REST1  CB   *R0+,*R1+    Same
+       JNE  BRESTH       No start over
+       DEC  R2           All tested
+       JNE  REST1        No
+       MOV  @WBUF1+10,@TOTFSC Get total sectors on floppy
+       INC  @SSEC        Get sector 1
+       BL   @GETSEC
+       DATA FIB          Place in FIB
+       DATA DRRD
+       DATA BRESTH
+       LI   R0,FIB+224   NOW Test if back names match
+       BLWP @VMBR        GET NAME FROM SCREEN FOR TEST
+       DATA MCL*5+14
+       DATA FIBS
+       DATA 20
+       LI   R1,FIBS
+       LI   R2,20
+REST2  C    *R0+,*R1+    MATCH?
+       JNE  BRESTH       NO
+       DECT R2           ALL Tested
+       JNE  REST2        NO
+       LI   R2,FIB+248   Get info in FIB
+       MOV  *R2+,@FIBTOT  # of FIBs in sector
+       JNE  RESTOK       TEST IF THERE ARE ANY FILES
+       B    @ROUTNO      NO FILES ON DISK ABORT
+RESTOK MOV  *R2,@BAKCNT  Get # of disks in set
+       MOV  *R2+,@RSTTOT
+       MOV  *R2,@FILTOT  Total files in set  for writing
+       MOV  *R2+,@FILTIN Total files in set  for reading
+       MOV  *R2,@FIBLOC  Sector of next FIB
+       MOV  @BAKCNT,R3   Display # of disks in backup set
+       BLWP @H2DM        Convert to decimal
+       DATA DTEXT
+       BLWP @VMBW
+       DATA MCL*7+19
+       DATA DTEXT
+       DATA 4
+       MOV  @FILTOT,R3   Display # of files in backup set
+       BLWP @H2DM
+       DATA DTEXT
+       BLWP @VMBW
+       DATA MCL*9+19
+       DATA DTEXT
+       DATA 4
+       BLWP @VMBW        Display In/OUT
+       DATA MCL*20       FROM:
+       DATA RESTM1       Restoring message
+       DATA 11
+       BLWP @VMBW
+       DATA MCL*20+24    TO:
+       DATA BACKM2
+       DATA 4
+       C    @BAKCNT,@DNTG Only 1 disk needed?
+       JEQ  RESTS4       Yes don't need to ask for more
+       MOV  @DRTOT,R5    ANY ADDITIONAL DRIVES AVAILABLE
+       CI   R5,1
+       JEQ  RESTS4       NO
+       INC  @ACTDR       Start with next drive
+       BLWP @ASKDK       Get the correct disks in the drives
+       CLR  @ACTDR       Reset back to 1st
+       LIST
+RESTS4 BL   @GETFBS      BUILD FIB SECTOR TABLE FOR DISK
+*
+       MOV  @FIB+FIBSIZ-2,@BSEC   START SECTOR
+       LI   R1,FIB       Pointer to start of FIB
+       MOV  R1,@RESTD
+       MOV  R1,R15        Pointer to FIB location
+       CLR  R6           File # in set
+RINLP  LI   R10,MEMADD   Start Memory Address
+       LI   R1,MAXM      Total # of AUs to put in memory From Floppy
+       MOV  R1,@MXAU
+TRYNM  MOV  R6,R0        Get start sector on disk for this file
+       SLA  R0,1         Double it
+       AI   R0,FIBTAB    Get its location in table
+       MOV  *R0,R0       Get its memory address
+       MOV  *R0,R7       Get this sector
+       C    @BSEC,R7     Time to display an input name
+       JNE  RNONAM       No
+*Display name to user
+* 1st test if it is currently protected on WDS so it can be bypassed
+* in final version if required
+*
+SEEIT  BLWP @TESTIT      Go test it 1st
+       BLWP @VMBW
+       DATA MCL*20+12
+RESTD  DATA 0            FIB name location
+       DATA 10
+       MOV  @NXTOUT,R0   Save a copy of BUFFER AU# that file starts
+       MOV  R10,*R0+     Save it
+       MOV  @RESTD,R2    Get location of its name # info
+       MOV  R2,R12
+       AI   R12,10        POINT TO FILE SIZE LOW
+       MOV  *R12,R12     GET LOW SIZE
+       MOV  R2,R13
+       AI   R13,18       POINT TO FILE SIZE HIGH
+       MOV  *R13,R13
+       SRL  R13,8        MOVE TO LOW BYTE
+       LI   R1,FIBSIZ-2  Save all info
+RONSAV MOV  *R2+,*R0+
+       DECT R1
+       JNE  RONSAV
+       MOV  R0,@NXTOUT
+       LI   R0,FIBSIZ    Point to next name
+       A    R0,@RESTD
+RNONAM C    @BSEC,@TOTFSC Reached end of floppy
+       JLT  RMORE        No
+       BL   @NXTRDK      Yes get next disk
+       MOV  R13,R13      Just complete a file
+       JNE  RMORE        No
+       MOV  R12,R12      Try low word
+       JNE  RMORE        More to go
+       DEC  @BSEC        Backup 1 sector
+       INC  @MXAU        Add in AU not done yet
+       INC  @FILTIN      Add 1 back to file count
+       JMP  RMORE2       Continue with new file
+RMORE  LI   R0,FIBSCS    TEST IF SECTOR TO GET IS A FIB
+RMORFX MOV  *R0,R1       GET A SECTOR #
+       JEQ  RMORE1       NO FIB
+       C    *R0+,@BSEC   IS THIS A FIB
+       JNE  RMORFX       NOT THIS ONE TRY NEXT
+       INC  @BSEC        Yes skip it
+       JMP  TRYNM        Try again
+RMORE1 MOV  R10,@RSECD   CPU LOCATION TO PUT DATA INTO
+RMORR  MOV  @BSEC,@SSEC  Sector to read
+       BL   @GETSEC
+RSECD  DATA 0
+       DATA DRRD
+       DATA RMORR        ERROR RTN
+       AI   R10,256      Next AU block
+       MOV  R13,R13      Any hi bytes set
+       JNE  RMOR1        Yes test low for >ffff
+       DEC  R12          Dec low byte
+       JEQ  RMORE2       If zero file complete
+       JMP  RMORE3       Else continue reading file sectors
+RMOR1  DEC  R12          Decrement low count of sectors in file
+       CI   R12,>FFFF    Wrap on count
+       JNE  RMORE3       no
+       DEC  R13          Decrement hi count
+       JMP  RMORE3       More sectors in file
+RMORE2 INC  R6           Set to do next file in set
+       DEC  @FIBTOT      Got all FIBs in this set?
+       JNE  MORFIB       No more to go
+RMORR1 MOV  @FIBLOC,R0   Any more FIBs on this disk
+       JEQ  MORFIB       No
+       MOV  R0,@SSEC     Go be next FIB set
+       BL   @GETSEC
+       DATA FIB
+       DATA DRRD         Get it
+       DATA RMORR1       Error
+       MOV  @FIB+248,@FIBTOT     Get # of FIBs in this set
+       MOV  @FIB+254,@FIBLOC    Location of next FIB on this disk
+       LI   R1,FIB       Reset position in FIB table
+       MOV  R1,@RESTD
+       CLR  R6           Reset file in FIB pointer
+MORFIB DEC  @FILTIN      Read all files in set ?
+       JEQ  RNOMOR       No all of files read in
+       INC  @BSEC        Next sector to read
+       DEC  @MXAU        Filled memory
+       JEQ  ROUTW
+       B    @TRYNM
+RMORE3 INC  @BSEC        Next sector to read
+       DEC  @MXAU        Filled all of memory?
+       JNE  RNONAM       No, Get more
+       UNL
+* Time to write to WDS
+ROUTW  BLWP @RWRIT       Write out info
+       MOV  @FILTOT,R3   Update total files
+       BLWP @H2DM        Convert to decimal
+       DATA DTEXT
+       BLWP @VMBW        Display count in case it changes
+       DATA MCL*9+19
+       DATA DTEXT
+       DATA 4
+       MOV  @DONE,R0     All done
+       JEQ  RINJ         No
+ROUTNO LI   R1,'0 '      Remove disks to go to 0
+       LI   R0,MCL*7+19
+       BLWP @VSBW
+       LI   R0,MCL*9+19  Set file to go to 0
+       BLWP @VSBW
+       B    @EXIT        Bye
+RINJ   B    @RINLP
+RNOMOR SETO @DONE        Set flag that all files have been read
+       JMP  ROUTW
+*
+***********************************
+* OUTPUT TO WDS
+***********************************
+*
+*
+RWRIT  DATA WS2,RWRIT1   Do output
+RWRIT1 LI   R10,MEMADD   Start of CPU memory
+       LI   R8,MAXM      Total # of Au available
+RLOOP  MOV  @NXTDSP,R1   Test if time to display next out file & create
+       C    *R1,R10      Reached SOF in memory?
+       JNE  OUTR1        No more data for current out file
+* Display this name
+       INCT @NXTDSP      Point to name
+       MOV  @NXTDSP,R1
+       MOV  R1,@OUTRD1
+       MOV  R1,@OUTRD2
+       MOV  R1,@OUTRD3
+       MOV  R1,@UBITNM+2
+       A    @TEN,@NXTDSP Set to start of additional info block
+       BLWP @VMBW
+       DATA MCL*20+29
+OUTRD1 DATA 0
+       DATA 10
+******** DISPLAY NEW FILES TO GO COUNT
+*
+       MOV  @FILTOT,R3   Update total files
+       BLWP @H2DM        Convert to decimal
+       DATA DTEXT
+       BLWP @VMBW        Display count in case it changes
+       DATA MCL*9+19
+       DATA DTEXT
+       DATA 4
+       LI   R0,>8322     Location for it
+       MOV  @NXTDSP,R2
+       LI   R1,12        # of Bytes to move
+OUTLPA MOV  *R2+,*R0+
+       DECT R1           Moved all
+       JNE  OUTLPA
+       MOV  @>8322,R4    Get total AU's in file
+       MOV  @>832A,R5    High #
+       SRL  R5,8         Move to bottom
+       CLR  R6           Upcount for next AU to xfer  low
+       CLR  R7           High
+       AI   R2,6         Skip over time/date stamps
+       INCT R2           START SECTOR OF DATA
+       MOV  R2,@NXTDSP   Save location of next info
+OUTRR  CLR  @DRIO        Set to create a file
+       MOVB @WDSC,@DRIO   WDS#
+       LI   R0,>2000
+       MOV  R0,@SEC#    Pointer to extra info block
+       BL   @DSRSUT      Go create the file
+       DATA FSOUT
+OUTRD2 DATA 0            Cpu pointer to file name
+       DATA OUTRR        Abort on error
+OUTR1  MOV  R10,@>8320   START VDP(CPU) location of file data
+       MOV  R6,@>8322    Start with 1st sector of file
+       SWPB R7
+       MOVB R7,@>832A    And do high byte for WDS
+       SWPB R7
+* On WDS there may be a high byte set in file size
+       MOV  R5,R5        Test if high byte set
+       JNE  RWRIT2       if set then file size exceeds # of AU's xfer
+* If not set process normal
+       C    R4,R8        Test if file size > than # of AUs available
+       JGT  RWRIT2       Yes Use UA'a for output size
+       S    R4,R8        Use up this # of AU's
+       SWPB R4           Move to top
+       MOVB R4,@DRIO+1   # of AU's to xfer
+       A    R4,R10       POINT TO NEXT FILE TO DO
+       CLR  R4           All au's done
+       SETO @TTCU        SET TIME TO CLEAR UPDATE BIT
+       DEC  @FILTOT      Subtract 1 from files to do
+       JNE  RWRIT3       If more to do continue
+       CLR  R8           Set no more AUs to do
+       JMP  RWRIT3       Join process
+* File size exceeds the # of memory AU's
+RWRIT2 SWPB R8
+       MOVB R8,@DRIO+1
+       SWPB R8
+* There may be a better way to do this but this will work  of WDS
+* I can't think of it now
+FILSUB INC  R6           Add 1 to next xfer sector # low
+       JNE  FILSB1       If reached zero the must increment high
+       INC  R7           Wrap on low so inc. high
+FILSB1 DEC  R4           Subtract 1 from the file AU
+       CI   R4,>FFFF     Dec past 0
+       JNE  FILSB2       No
+       DEC  R5           Yes Decrement high count
+FILSB2 DEC  R8           Subtract 1 from # of AU's being written
+       JNE  FILSUB       Loop until its zero
+*******************************************************
+RWRIT3 LI   R0,>2000     Location of extra info block
+       MOV  R0,@SEC#
+       MOVB @WDSC,@DRIO   Put in WDS #
+       BL   @DSRSUT      Write it out
+       DATA FSOUT
+OUTRD3 DATA 0
+       DATA RWRIT3       ERROR
+       ABS  @TTCU
+       JEQ  OUTRD4
+       CLR  @TTCU
+       BLWP @USET
+*
+OUTRD4 MOV  R8,R8        All AU's written
+       JNE  RLOOPJ       No
+RWRTRT RTWP              Return to caller
+RLOOPJ B    @RLOOP
+*
+*
+NXTRDK MOV  @DRTOT,R1    Get the # of drives available
+       CI   R1,1         more then 1
+       JEQ  NXTRD1       No must ask for next
+       INC  @ACTDR       Make next drive active
+       C    @ACTDR,@DRTOT  Reached past final drive
+       JNE  NXTRD2       No return w/o asking
+       CLR  @ACTDR       RESET
+NXTRD1 BLWP @ASKDK       Ask for next drive(s)
+NXTRD2 CLR  @SSEC
+       INC  @DNTG        Increment disks done
+       DEC  @BAKCNT      Dec. # needed
+       MOV  @BAKCNT,R3   Display new #
+       BLWP @H2DM
+       DATA DTEXT
+       BLWP @VMBW
+       DATA MCL*7+19
+       DATA DTEXT
+       DATA 4
+       MOV  @ACTDR,R1    Get active drive
+       MOVB @FDRS(R1),R1 Get the # of this drive
+       MOVB R1,@DRRD
+       MOVB R1,@DRWT
+       AI   R1,>3000
+       LI   R0,MCL*3+13  Update display of active drive
+       BLWP @VSBW
+* NOW GET THE TOTAL SECTORS ON THIS DISK
+       MOV  R11,@OUTZR+2
+OUTZ   BL   @GETSEC
+       DATA WBUF1
+       DATA DRRD
+       DATA OUTZ
+       MOV  @WBUF1+10,@TOTFSC Get total sectors on floppy
+       BL   @GETFBS
+       LI   R1,1         Pointer for next FIB to get
+       MOV  R1,@FIBLOC
+       MOV  R1,@FIBTOT      Setup so next DEC will get this fib
+       LI   R1,2         Make next sector 1 to start with
+       MOV  R1,@BSEC
+OUTZR  B    @0           CONTINUE READING FILE
+*
+*
+GETFBS LI   R15,FIBSCS        TABLE FOR FIBS ON DISK
+       MOV  R11,@GTFBRT+2
+       LI   R1,1              START WITH SECTOR 1
+GTFBS1 MOV  R1,@SSEC          MAKE THIS THE SECTOR TO READ
+GETFBR BL   @GETSEC
+       DATA WBUF1
+       DATA DRRD
+       DATA GETFBR
+       MOV  @WBUF1+254,*R15   SAVE THIS SECTOR #
+       MOV  *R15+,R1          NEXT FIB TO GET
+       JNE  GTFBS1            THERE ARE MORE
+GTFBRT B    @0
+*
+EXIT   BL   @CLRLN
+       DATA MCL*12,9     CLEAR LINES 12-20
+       BLWP @BEEP
+       BLWP @VMBW
+       DATA MCL*19+16
+EXITD  DATA BAKDNM
+       DATA 8
+EXTERR LWPI WS2
+       BLWP @VMBW        Exit messages
+       DATA MCL*22+13
+       DATA PROM         MDM5
+       DATA 6
+       BLWP @VMBW
+       DATA MCL*22+21
+       DATA PROQ
+       DATA 4
+       BLWP @BEEP
+       JMP  EXIT1
+EXITN  BLWP @HONK        ERROR tone
+EXIT1  BL   @GETKY1
+       CI   R1,>5100     Q key
+       JEQ  EXIT3        Yes exit to TI screen
+       BL   @SOLID
+       B    @RELOAD      Go reload
+EXIT3  B    @ABORT
+NOFHNK BLWP @HONK        Sound error
+       JMP  EXTERR       ERROR EXIT
+*
+TTCU   DATA 0
+USETWS BSS  >20
+USET   DATA USETWS,USET1
+USET1  MOV  @FDRT,R1     SECTOR OF FDR'S FOR DIRECTORY
+       BL   @WRTSCW      GET THIS SECTOR
+       DATA WBUF2
+       DATA WDRRD
+       DATA USET1        RETRY
+       CLR  @WBUF2+254
+       LI   R5,WBUF2     NOW FIND THE FILE WE JUST RESTORED
+USET2  MOV  *R5,R1
+       JEQ  OOPS         IF WE GET HERE SOMETHING IS WRONG
+       BL   @WRTSCW
+       DATA WBUF3
+       DATA WDRRD
+       DATA USET2        ERROR RETRY
+       INCT R5
+UBITNM LI   R0,0         NAME OF FILE
+       LI   R1,WBUF3     NAME OF ONE WE GOT
+       LI   R2,10
+USET3  C    *R0+,*R1+    EQUAL 2 AT A TIME
+       JNE  USET2        NO TRY FOR ANOTHER
+       DECT R2
+       JNE  USET3        CONTINUE TESTING
+* FOUND THE FILE WE JUST RESTORED
+       MOVB @WBUF3+12,R0 GET STATUS FLAGS
+       ANDI R0,>EFFF     TURN OFF UPDATE BIT
+       MOVB R0,@WBUF3+12 PUT BACK INTO SECTOR
+       DECT R5           POINT BACK TO SECTOR
+USET4  MOV  *R5,R1       GET SECTOR # TO WRITE BACK
+       BL   @GETSCW      WRITE IT BACK
+       DATA WBUF3
+       DATA WDRWT
+       DATA USET4
+       RTWP
+*
+OOPS   BLWP @VMBW
+       DATA 20
+       DATA OOT
+       DATA 14
+       RTWP
+OOT    TEXT 'FILE NOT FOUND'

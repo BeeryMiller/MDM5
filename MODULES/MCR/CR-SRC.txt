@@ -1,0 +1,13 @@
+       UNL
+       COPY "DSK1.CR.CR-EQU"
+       COPY "DSK1.CR.CR-MAIN"
+       LIST
+       COPY "DSK1.CR.CR-RESTORE"
+       UNL
+       COPY "DSK1.CR.CR-DISKS"
+       COPY "DSK1.CR.CR-SUBS"
+       COPY "DSK1.CR.CR-NOISE"
+       COPY "DSK1.CR.CR-SUPPORT"
+       COPY "DSK1.CR.CR-DATA"
+       COPY "DSK1.CR.CR-RELOAD"
+       END

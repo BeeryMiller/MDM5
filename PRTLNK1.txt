@@ -1,0 +1,106 @@
+*** MODULE NAME - PRTLNK ***
+*   if calling a winchester sub (>2x), then swap dsr page in
+SAV50  DATA 0
+PRTLNK DATA HIREG2,$+2
+       MOV  *R14+,R5
+       MOV  @>8350,@SAV50     SAVE SECTOR # FOR ERROR HANDLING
+       CLR  @SWPDON           assume not winchester
+       SZCB @H20,R15
+       MOV  @SCNAME,R1
+       MOV  R1,R9
+       AI   R9,-8
+       BL   @VSBR
+       MOVB R0,R3
+       SRL  R3,8
+       SETO R4
+       LI   R2,NAMBUF
+LNK$LP INC  R4
+       C    R4,R3
+       JEQ  LNK$LN
+       MOVB @VDPRD,*R2
+       CB   *R2+,@DECMAL
+       JNE  LNK$LP
+LNK$LN MOV  R4,R4
+       JEQ  LNKERR
+       CI   R4,7
+       JGT  LNKERR
+       CI   R4,1              length of 1?
+       JNE  LNK$LM            no
+       CI   R5,10             subroutine call?
+       JNE  LNK$LM            no
+       CB   @-1(R2),@H20
+       JL   LNK$LM
+*      SETO @SWPDON
+*      BL   @SWPDSR
+LNK$LM MOV  R4,@SCLEN
+       INC  R4
+       A    R4,@SCNAME
+       LWPI GPLWS
+       CLR  R1
+       LI   R12,>0F00
+NOROM  SBZ  0
+       AI   R12,>0100
+       CI   R12,>2000
+       JEQ  NODSR
+       MOV  R12,@CRULST
+       SBO  0
+       LI   R2,>4000
+       CB   *R2,@HAA
+       JNE  NOROM
+       A    @HIREG2+10,R2
+       JMP  SGO2
+SGO    MOV  @SADDR,R2
+SGO2   MOV  *R2,R2
+       JEQ  NOROM
+       MOV  R2,@SADDR
+       INCT R2
+       MOV  *R2+,R9
+       MOVB @SCLEN+1,R5
+       JEQ  NAME2
+       CB   R5,*R2+
+       JNE  SGO
+       SRL  R5,8
+       LI   R6,NAMBUF
+NAME1  CB   *R6+,*R2+
+       JNE  SGO
+       DEC  R5
+       JNE  NAME1
+NAME2  INC  R1
+       BL   *R9
+       JMP  SGO
+       SBZ  0
+       LWPI HIREG2
+*      ABS  @C9640            GENEVE SYSTEM
+*      JNE  NOLVL1            YES DON'T NEED TO TRY ANY MORE
+       CI   R5,10             LEVEL 1 I/O
+       JNE  NOLVL1            NO
+       MOVB @>8350,R1         ANY ERROR OCCUR
+       JEQ  PRTRET            NO
+       SRL  R1,8
+       CI   R1,7
+       JGT  NOLVL1
+       C    @CRULST,@H1F00    ALL CRU'S TRIED
+       JEQ  NODSR             YES ERROR
+       MOV  @SAV50,@>8350     RESTORE 8350
+       LWPI GPLWS
+       MOV  @CRULST,R12
+       JMP  NOROM+2           TRY NEXT CRU
+NOLVL1 MOV  R9,R1
+       BL   @VSBR
+       SRL  R0,13
+       JNE  IOERR3
+       JMP  PRTRET
+NODSR  LWPI HIREG2
+       CI   R5,10             SECTOR I/O
+       JNE  LNKERR            NO
+       MOVB @>8350,R0         ANY ERROR NOW
+       JNE  LNKERR            YES
+       MOVB @H08,@>8350       SET NO DISK/DRIVE ERROR
+LNKERR CLR  R0
+IOERR3 MOV  R0,*R13
+       SOCB @H20,R15
+PRTRET ABS  @SWPDON           swap dsr on?
+*      JEQ  $+6               jump to rtwp
+*      BL   @SWPDSR           swap dsr
+       RTWP
+       EVEN

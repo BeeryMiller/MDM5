@@ -1,0 +1,38 @@
+*** MODULE NAME - 80TK
+*DETERMINE WHETHER THIS IS 80 TK DRIVE OR NOT
+*SET EQUAL BIT ON RETURN IF IT IS AN 80 TRACK DRIVE
+* changed to read table of tracks for drive so handle both floppy and HFDC
+*
+*
+DRIV81 ANDI R15,>CFFF    *DEFAULT TO NOT EQUAL AND NO CARRY
+*      MOV  @DCPRES,R12
+*      CB   @DCID,@H03  *CHECK ROM ID
+*      JL   NO80RM       *IF LESS THAN VER. 3 THEN IT CAN'T BE AN 80 TK DRIVE
+*IT IS AN 80 TK ROM
+*IS IT VERS. 4?
+*      CB   @DCID,@H04
+*      JNE  NOV4
+*      ORI  R15,>1000    *SET CARRY BIT
+*GET THE DRIVE NUMBER AND ADJUST
+* NOV4   LI   R1,>1F08          TB 8
+*      S    @DRVNUM,R1        Minus drive number
+*      X    R1                Read bit
+*      JEQ  NO80RM            Not an 80 track drive
+       MOV  @DRVNUM,R1        get drive #
+* MUST TEST IF CRUBASE IS OTHER THAN >1100
+* IF IT IS NOT THEN MUST TEST IF DR1 EMULATION IS ON BECAUSE IF
+* IT IS THEN PHYSICAL DR1-4  BECOMES LOGICAL 2-5
+*
+       C    @DCPRES,@WDPRES   IS HFDC AT CRU >1100
+       JNE  $+12              NO SO DRIVES WILL MAP OK
+       MOV  @EMUFDR,R0        TEST IF DRIVE 1 EMU IS ON
+       JEQ  $+6               NO DRIVES MAP OK
+       DEC  R1                MAP LOGICAL DRIVES BACK TO PHYSICAL DRIVES
+       JEQ  $+10              IF ITS ZERO (LOGICAL DR 1) ALLOW FOR 80
+* OTHERWISE DRIVES WILL NOW MAP CORRECTLY
+       MOVB @LODRVS-1(R1),R2  get the # of tracks for this drive
+       CB   R2,@H50           is it an 80 track drive
+       JNE  $+6               no
+*IT IS AN 80 TK DRIVE
+       ORI  R15,>2000    *SET EQUAL BIT
+       RTWP

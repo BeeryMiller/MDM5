@@ -1,0 +1,426 @@
+*******************************
+* BR-SUBS                     *
+*******************************
+*
+* Get a Key for Continue or exit(if exit no rtn)
+*
+GETKYR BLWP @VMBW
+       DATA MCL*22+15
+       DATA PROE
+       DATA 4
+       BLWP @VMBW
+       DATA MCL*22+21
+       DATA PROR
+       DATA 5
+       JMP  GTKYCC
+GETKYC BLWP @VMBW
+       DATA MCL*22+13
+       DATA PROC
+       DATA 8
+       BLWP @VMBW
+       DATA MCL*22+23
+       DATA PROE
+       DATA 4
+GTKYCC MOV  R11,R12      SAVE rtn
+GETKC1 BL   @GETKY1
+CRK    CI   R1,>4300     CONTInue
+       JEQ  GETKC3       YES
+       CI   R1,>4500     EXIT
+       JNE  GETKC2       NO
+       LI   R1,>4300
+       MOVB R1,@CRK+2
+       BL   @CLRLN       CLEAR ALL PROMPTS
+       DATA MCL*17,4
+       BL   @CLRLN
+       DATA MCL*22,1     CLEAR COMMAND AREA
+       BL   @SOLID
+       B    @EXTERR      GO TO exit
+GETKC2 BLWP @HONK
+       JMP  GETKC1       TRY Again
+GETKC3 LI   R1,>4300
+       MOVB R1,@CRK+2
+       BL   @CLRLN
+       DATA MCL*22,1
+       B    *R12
+*
+* General get a key routine key code rtn in R1 MSB
+*
+GETKY  BLWP @BEEP
+GETKY1 CLR  R1
+GETKY2 BLWP @KSCAN       GET A KEY
+       CB   @FF,@>8375   ANY KEY HIT
+       JEQ  GETKY2       NO
+       MOVB @>8375,R1    SAVE KEY
+WAIT   BLWP @KSCAN       DEBOUNCE KEYBOARD
+       CB   @FF,@>8375   ANY KEY
+       JNE  WAIT         YES
+       ANDI R1,>DF00
+       RT
+*
+ABORT  LWPI >A000        SET A KNOW WS NON-PAD
+       LI   R0,>8300     INIT PAD TO ZEROS
+       CLR  R1
+ABTPAD MOV  R1,*R0+
+       CI   R0,>8400     ALL OF PAD DONE
+       JNE  ABTPAD       NO
+       BLWP @0           BYE
+*
+* PARMS PASSED ARE LINE # TO CLEAR & THE # OF LINES TO DO
+*
+CLRLN  MOV  *R11+,R0     CLEAR A LINE
+       MOV  *R11+,@CLR#  # OF LINES TO DO
+       LI   R1,'  '      TO SPACES
+CLRLN1 LI   R2,MCL       FOR THE MAX LENGTH OF A LINE
+CLRLN2 BLWP @VSBW
+       INC  R0           NEXT SCREEN POSITION
+       DEC  R2           LINE DONE
+       JNE  CLRLN2       NO
+       DEC  @CLR#        ANY MORE LINES
+       JNE  CLRLN1       YES
+       RT
+*
+STERR  BLWP @VMBW              ERROR
+       DATA MCL*21,STERM,8
+       MOV  *R11+,@STERR1     MESSAGE
+       MOV  *R11+,@STERR2     LENGTH
+       BLWP @VMBW
+       DATA MCL*21+8
+STERR1 DATA 0
+STERR2 DATA 0
+       RT
+*
+SOLID  LI   R0,MCL*21
+       LI   R1,>1400
+       LI   R2,MCL
+SOLID1 BLWP @VSBW
+       INC  R0
+       DEC  R2
+       JNE  SOLID1
+       RT
+*
+* READ/WRITE A SECTOR FROM THE WDS
+WRTSCW LI   R2,TAR
+       JMP  GTSCW
+GETSCW LI   R2,SRC
+GTSCW  BLWP @VMBW
+       DATA PLOC
+       DATA WRWS
+       DATA 2
+       LI   R0,PLOC
+       MOV  R0,@PADDR
+       MOV  *R11+,@VPOINT     CPU LOCATION FOR SECTOR READ
+       MOV  *R11+,R0     WDS# W/CPU BIT AND I/O TYPE
+       MOV  *R0,@DRIO
+       MOV  R1,R0
+       MPY  @SPAU,R0     GET TOTAL SECTOR #
+       MOV  R0,@>8352    HI #
+GTSCW1 MOV  R1,@SEC#     LOW WORD OF SECTOR #
+       BLWP @WDRLNK      WDS DSRLINK
+       DATA 10
+       MOVB @SEC#,@SEC#  ANY ERROR
+       JNE  ERRHND       YES
+       JMP  SECNOR       NO ERROR
+* GET A SECTOR FOR FLOPPY
+GETSCT LI   R2,TAR
+       JMP  GETSCN
+GETSEC LI   R2,SRC
+GETSCN BLWP @VMBW        LOAD PAB
+       DATA PLOC         VDP ADDRESS
+       DATA RWS          SECTOR I/O DATA
+       DATA 2
+       MOV  *R11+,@GETSD  CPU BUFFER FOR DATA reade
+       MOV  *R11+,R1     DRIVE AND OP TYPE
+       MOV  *R1,@DRIO
+GETSC1 LI   R1,VBUF      Location for VDP buffer
+       MOV  R1,@VPOINT   Place in DSR pointer
+       MOV  @SSEC,@SEC#  SECTOR # TO DO I/O ON
+       LI   R1,PLOC
+       MOV  R1,@PADDR
+       BLWP @DSRLNK
+       DATA 10
+       MOVB @SEC#,@SEC#  ANY ERROR
+       JNE  ERRHND       YES
+       BLWP @VMBR        GET SECTOR TO CPU
+       DATA VBUF         VDP LOCATION
+GETSD  DATA 0            CPU LOCATION
+       DATA 256          1 SECTOR LENGTH
+SECNOR INCT R11          GOOD RETURN
+       RT
+* FLOPPY WRITE SECTOR
+WRTSEC MOV  *R11+,@WRTSD CPU BUFFER FOR DATA write
+WRTSC1 LI   R2,TAR
+       BLWP @VMBW        Move data to vdp
+       DATA VBUF         Vdp buffer
+WRTSD  DATA 0
+       DATA 256
+       LI   R1,VBUF      Location for VDP buffer
+WRTSC2 MOV  R1,@VPOINT   Place in DSR pointer
+       BLWP @VMBW        LOAD PAB
+       DATA PLOC         VDP ADDRESS
+       DATA RWS          SECTOR I/O DATA
+       DATA 2
+       MOV  *R11+,R1      DRIVE AND OP TYPE
+       MOV  *R1,@DRIO    Put info into DSR pointer
+       MOV  @SSEC,@SEC#  SECTOR # TO DO I/O ON
+       LI   R1,PLOC
+       MOV  R1,@PADDR
+       BLWP @DSRLNK
+       DATA 10
+       MOVB @SEC#,@SEC#  ANY ERROR
+       JNE  ERRHND       YES
+       INCT R11          GOOD RETURN
+       RT
+*
+ERRHND MOV  *R11,R1      SEE IF FORMAT FLOPPY ERROR
+       MOV  R1,@ERRSV    SAVE RTN
+ERHND3 LI   R1,7
+ERHND2 MOV  R1,@ERTYP1    LENGTH
+       MOV  R2,@ERTYP     TARGET/SOURCE
+       BL   @STERR
+ERTYP  DATA 0
+ERTYP1 DATA 15
+       BLWP @HONK
+       LI   R1,'R '
+       MOVB R1,@CRK+2
+       BL   @GETKYR      LOOK FOR R KEY
+       BL   @SOLID
+       MOV  @ERRSV,R11   GET RETRY ADDRESS
+       B    *R11
+*
+DSRSUT LI   R2,TAR
+       JMP  DSRSB
+DSRSUB LI   R2,SRC
+DSRSB  MOV  *R11+,R1     Op type
+       MOV  *R11+,@VPOINT VDP pointer
+       LI   R0,PLOC
+       MOV  R0,@PADDR
+       BLWP @VSBW        1st byte
+       INC  R0
+       SWPB R1           2nd byte
+       BLWP @VSBW
+       BLWP @DSRLNK
+       DATA 10
+       MOVB @SEC#,@SEC#  Any error
+       JNE  ERRHND       Yes
+       INCT R11          Good return
+       RT
+*
+DUPMEM MOV  *R11+,R2     # of bytes to do
+       MOV  *R11+,R1     Character to do
+       MOV  *R11+,R0     Starting CPU memory address
+DUPMM1 MOVB R1,*R0+
+       DEC  R2
+       JNE  DUPMM1
+       RT
+*
+* R3 must contain the number to be converted
+* For a 5 digit output R5 must contain the hi byte
+* CONVERTED NUMBER IS RIGHT JUSTFIED WITH LEADING ZEROS SUPPRESSED
+* OUTPUT IS TO SCREEN
+* DATA STATEMENT FOLLOWING CALL IS VDP ADDRESS
+*
+H2DD5  LI   R1,5         # to write
+       MOV  R1,@H2DDX
+       LI   R2,DTEXT     DISPLAY 5 BYTES
+       JMP  H2DD1
+* ENTRY POINT FOR A 4 DIGIT CONVERT
+*
+H2DD   LI   R1,4
+       MOV  R1,@H2DDX
+       CLR  R5           NO HIGH BYTE
+       LI   R2,DTEXT+1   DISPLAY 4 BYTES
+H2DD1  MOV  R2,@H2DDX1
+       CLR  R2
+       LI   R1,4
+       MOV  *R11+,@H2DDD START OF DISPLAY
+       LI   R0,DTEXT
+       MOV  R3,R6        GET LOW WORD
+H2DD2  DIV  @DIVTAB(R2),R5    Divide
+       MOVB @CHARS(R5),*R0+
+       CLR  R5
+       INCT R2
+       DEC  R1           ALL DONE
+       JNE  H2DD2        NO
+       MOVB @CHARS(R6),*R0+  FINAL REMAINDER IS ONES DIGIT
+       SRL  R1,1         MAKE INTO # OF LEADING ZEROS TO SUPPRESS
+       LI   R0,'  '
+       LI   R2,DTEXT
+H2DD3  CB   *R2,@CHARS   GOT A ZERO
+       JNE  H2DD4        NO DONE
+       MOVB R0,*R2+
+       DEC  R1
+       JNE  H2DD3
+H2DD4  BLWP @VMBW
+H2DDD  DATA 0            SCREEN POSITION
+H2DDX1 DATA DTEXT
+H2DDX  DATA 4
+       RT
+*
+* R3 MUST CONTAIN # TO BE CONVERTED TO A 4 DIGIT DECIMAL
+* OUTPUT IS LEFT JUSTIFIED WITH SPACES TO FILL
+* OUTPUT IS TO MEMORY
+* DATA STATEMENT FOLLOWING CALL IS MEMORY ADDRESS
+*
+H2DM   DATA DLNKWS,H2DMM
+H2DMM  MOV  *R14+,R0     CPU MEMORY  ADDRESS
+       MOV  @6(R13),R3   GET WORD TO CONVERT
+       MOV  R0,R4
+       LI   R2,4
+       LI   R1,'  '
+H2DMC  MOVB R1,*R4+      INIT MEMORY LOCATION TO SPACES
+       DEC  R2
+       JNE  H2DMC
+       MOV  R3,R4        HEX TO CONVERT
+       LI   R6,1000
+       CLR  R7
+H2DM1  CLR  R5
+       CLR  R3
+       DIV  R6,R3
+       MOV  R3,R3
+       JNE  H2DM2
+       MOV  R7,R7        GOT A LEADING CHARACTER YET
+       JEQ  H2DM3        NO
+H2DM2  AI   R3,>30       ADD ASCII ZERO
+       SWPB R3
+       MOVB R3,*R0+
+       SETO R7           Display trailing zeros
+H2DM3  DIV  @TEN,R5      MORE TO DO
+       MOV  R5,R6
+       JNE  H2DM1
+       RTWP
+*
+*
+TESTIT DATA WS3,TSTIT1   Test restore file for protect before doing
+TSTIT1 CLR  R8           INIT skip flag
+       MOV  @PROCNT,R4   Total to test
+       JEQ  TSTRT        If none in list return
+       LI   R0,>1000     Start of protected names list
+TSTIT2 LI   R5,WIONAM    Name location to in cpu
+       MOV  R0,@PTSTN    Get it from VDP
+       BLWP @VMBR
+PTSTN  DATA 0
+       DATA WBUF1        Put it here in CPU
+       DATA 10
+       LI   R2,WBUF1
+       LI   R3,10        10 characters to test
+TSTIT3 CB   *R5+,*R2+    Names =
+       JNE  TSTIT4       No
+       DEC  R3           All tested
+       JNE  TSTIT3       No
+* This file is protected
+       JMP  TSTIT5       See if it is to be overritten
+OVRWRT CLR  @DRIO        do unprotect
+       MOVB @WDSC,@DRIO
+       BL   @DSRSUT      Go go it
+       DATA PRO
+       DATA WIONAM
+       DATA OVRWRT       ERROR
+TSTRT  MOV  R8,@16(R13)  SET Callers R8 according to overwrite desire
+       RTWP              OK to proceed with restore
+TSTIT4 AI   R0,10        Point to next name in protected list
+       DEC  R4           All names tested
+       JNE  TSTIT2       No do it again
+       JMP  TSTRT        RTN With ok to write status
+*
+TSTIT5
+       MOVB @RACT,R1     Get action type
+       JEQ  OVRWRT       if 0 overwrite
+       SRL  R1,8
+       CI   R1,>0002     Skip
+       JEQ  NOOVR        Yes
+* Must be prompted
+       BLWP @VMBW
+       DATA MCL*17+1
+       DATA FILMSG
+       DATA 4
+       BLWP @VMBW
+       DATA MCL*17+6
+       DATA WIONAM
+       DATA 10
+       BLWP @VMBW
+       DATA MCL*17+17
+       DATA OROVR1
+       DATA 20
+       BLWP @VMBW
+       DATA MCL*18+1
+       DATA OROVR2
+       DATA 37
+       BL   @GETYN       Get yes no response
+       JMP  OVRWRT       Got a yes overwrite the file
+* rtn to here from y/n input says don't overwrite this file
+NOOVR  SETO R8           SET Flag to not overwrite this file
+       LI   R0,MCL*20+29 REMOVE NAME FROM OUT DISPLAY
+       LI   R1,'  '
+       LI   R2,10
+RMVNOT BLWP @VSBW
+       INC  R0
+       DEC  R2
+       JNE  RMVNOT
+       JMP  TSTRT        GO DO it
+*
+TIMER  DATA 0
+CTIME  INC  @TIMER
+       RT
+*
+* Get a yes no response
+*
+GETYN  MOV  R11,R12      SAVE rtn
+GETYN1 BL   @GETIKY
+       DATA MCL*18+37    DISPLay location
+       ANDI R1,>5F00     MAKE U/C
+       CI   R1,>5900     Is it a 'Y'
+       JEQ  GETYN2       Yes
+       CI   R1,>4E00     Is it an 'N'
+       JEQ  GETYN2       Yes
+       BLWP @HONK        Error tone
+       JMP  GETYN1       Ignore
+GETYN2 MOV  R1,R3        SAVE key
+       BL   @CLRLN
+       DATA MCL*17,2
+       MOV  R12,R11
+       CI   R3,>4E00     Was it an 'N'
+       JNE  GETYN3
+       INCT R11          Make return 'N'
+GETYN3 RT
+*
+GETIKY BLWP @BEEP
+       LI   R0,CTIME
+       MOV  R0,@>83C4    Turn on timer
+       CLR  @TIMER
+       MOV  *R11+,R0     CURSOr location
+GETI1  MOV  @TIMER,R2    Time to reverse
+       CI   R2,20
+       JNE  GETI2        NO
+       CLR  @TIMER
+       BLWP @VSBR        GET Current character
+       XOR  @VARBIT,R1   FLIP hi bit
+       BLWP @VSBW        WRITE it back
+GETI2  LIMI 2            Interrupts on
+       LIMI 0            Interrupts off
+       CLR  R1
+       BLWP @KSCAN
+       CB    @FF,@>8375  Got a key
+       JEQ  GETI1        Not yet
+       MOVB @>8375,R1    Get the key
+GETI3  BLWP @KSCAN       DEBOUNCE KYBD
+       CB   @FF,@>8375
+       JNE  GETI3
+       CLR  @>83C4       TURN off timer
+       RT
+*
+***************************
+* CONVERT A DECIMAL # TO HEX
+*
+D2H    MOV  *R11+,R0
+       CLR  R3
+       LI   R2,4
+D2H1   MOVB *R0+,R1
+       SLA  R1,4         CLEAR OUT HI NIB
+       SRL  R1,12        MOVE TO WORD
+       MPY  @TEN,R3
+       MOV  R4,R3
+       A    R1,R3
+       DEC  R2
+       JNE  D2H1
+       RT
+*

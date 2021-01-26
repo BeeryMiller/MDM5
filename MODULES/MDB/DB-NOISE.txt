@@ -1,0 +1,41 @@
+***
+*
+*  HONK AND BEEP
+*
+***
+HONK   DATA DLNKWS,HONK1
+BEEP   DATA DLNKWS,BEEP1
+HONK1  LI   R1,HNKLST
+       JMP  PLAY
+BEEP1  LI   R1,BEPLST
+PLAY   MOVB *R1+,R2
+       SRL  R2,8
+PLAYLP MOVB *R1+,@>8400
+       DEC  R2
+       JNE  PLAYLP
+       MOVB *R1+,R2
+       SRL  R2,8
+       JEQ  NOSND
+NTIMER LI   R3,1000  *1560
+TIMLP  DEC  R3
+       JNE  TIMLP
+       DEC  R2
+       JNE  NTIMER
+       JMP  PLAY
+NOSND  RTWP
+* List for "honk" sound
+HNKLST BYTE >04,>9F,>BF,>DF,>FF,1
+       BYTE >03,>C9,>3F,>D0,4
+       BYTE >01,>D1,3
+       BYTE >01,>D5,2
+       BYTE >01,>DB,1
+       BYTE >01,>DF,0
+* List for "beep" sound
+BEPLST BYTE >04,>9F,>BF,>DF,>FF,1
+       BYTE >03,>80,>05,>90,4
+       BYTE >01,>91,3
+       BYTE >01,>95,2
+       BYTE >01,>9B,1
+       BYTE >01,>9F,0
+H7C    BYTE >7C
+       EVEN
